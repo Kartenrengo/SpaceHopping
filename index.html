@@ -25,17 +25,16 @@
 </style>
 </head>
 <body>
-<div id="wrap"><canvas id="tz" aria-label="Trabant – von der Sonne bis zum Neptun. Tippen gibt dem Kometen Schub"></canvas></div>
+<div id="wrap"><canvas id="tz" aria-label="Trabant – von der Sonne bis zum Rand des beobachtbaren Universums. Finger halten macht den Kometen schwer, loslassen lässt ihn fliegen"></canvas></div>
 <script>
 "use strict";
 // ---------- Stellschrauben ----------
-const W = 360; let H = 640;                 // Spielwelt; Höhe passt sich dem Handy an
-const GRAVITY = 1500, FLAP = -430, MAX_FALL = 620;
-const SHIP_X = 100, SHIP_R = 8;             // Komet: Position und Trefferradius
-const COL_W = 58;                            // Breite eines Gesteinsfeldes
-const MAX_SHIFT = 170;                       // max. Höhensprung zwischen zwei Lücken
-// Jeder Planet ist ein Level. Level 1 → Endstufe (wie beim Vogelspiel), danach bleibt es auf Maximum
-const SPEED = [140, 265], GAP = [178, 112], SPACING = [235, 160], LEVELS_TO_MAX = 10;
+const W = 360; let H = 640;                  // Spielwelt-Breite; Höhe passt sich dem Handy an
+const G = 1100, G_HOLD = 3600;               // Schwerkraft normal / beim Halten (Komet wird schwer)
+const START_V = 260, MIN_V = 110, MAX_V = 1500;
+const PERFECT = 0.22;                        // max. Winkel (sin) für eine perfekte Landung
+const FEVER_CHAIN = 3, FEVER_T = 5;          // perfekte Landungen in Folge → Fieber für 5 s
+const LIGHT_START = 25;                      // Sekunden Licht zu Beginn
 const F = 'Georgia, serif';
 
 const SETS = [
@@ -48,31 +47,42 @@ const SETS = [
   { name: 'Asche',       paper: '#14131A', deep: '#3A3750', a: '#E0FF4F', b: '#FF6B6B', cream: '#EDEBE4' }
 ];
 
-// Echte Werte aus dem NASA Planetary Fact Sheet: Abstand zur Sonne in Mio. km, Durchmesser in km
-const BODIES = [
-  { name: 'Merkur',  dist: 57.9,   diam: 4879,   look: 'rock',  col: 'cream' },
-  { name: 'Venus',   dist: 108.2,  diam: 12104,  look: 'veil',  col: 'a' },
-  { name: 'Erde',    dist: 149.6,  diam: 12756,  look: 'moon',  col: 'b' },
-  { name: 'Mars',    dist: 228.0,  diam: 6792,   look: 'rock',  col: 'a' },
-  { name: 'Jupiter', dist: 778.5,  diam: 142984, look: 'bands', col: 'cream' },
-  { name: 'Saturn',  dist: 1432.0, diam: 120536, look: 'ring',  col: 'a' },
-  { name: 'Uranus',  dist: 2867.0, diam: 51118,  look: 'tilt',  col: 'b' },
-  { name: 'Neptun',  dist: 4515.0, diam: 49528,  look: 'spot',  col: 'b' }
+// Echte Entfernungen von der Sonne bzw. der Erde (NASA Planetary Fact Sheet, Voyager, Gaia, JWST).
+// Ab Proxima: Lichtjahre; bei den fernsten Galaxien die Lichtlaufzeit.
+const LJ = 9.461e12;
+const STAGES = [
+  { name: 'Merkur',  km: 57.9e6,   label: '58 Mio. km',   look: 'rock',  col: 'cream', size: 14 },
+  { name: 'Venus',   km: 108.2e6,  label: '108 Mio. km',  look: 'veil',  col: 'a',     size: 25 },
+  { name: 'Erde',    km: 149.6e6,  label: '150 Mio. km',  look: 'moon',  col: 'b',     size: 26 },
+  { name: 'Mars',    km: 228.0e6,  label: '228 Mio. km',  look: 'rock',  col: 'a',     size: 18 },
+  { name: 'Jupiter', km: 778.5e6,  label: '779 Mio. km',  look: 'bands', col: 'cream', size: 55 },
+  { name: 'Saturn',  km: 1432e6,   label: '1,43 Mrd. km', look: 'ring',  col: 'a',     size: 50 },
+  { name: 'Uranus',  km: 2867e6,   label: '2,87 Mrd. km', look: 'tilt',  col: 'b',     size: 40 },
+  { name: 'Neptun',  km: 4515e6,   label: '4,52 Mrd. km', look: 'spot',  col: 'b',     size: 40 },
+  { name: 'Pluto',   km: 5906e6,   label: '5,9 Mrd. km',  look: 'pluto', col: 'cream', size: 16, note: 'Kuipergürtel · New Horizons 2015' },
+  { name: 'Heliopause', km: 18.1e9, label: '18 Mrd. km',  look: 'helio', size: 60, note: 'Rand der Sonnenblase · Voyager 1, 2012' },
+  { name: 'Proxima Centauri b', km: 4.24 * LJ, label: '4,2 Lichtjahre', look: 'star', size: 34, note: 'nächster bekannter Exoplanet' },
+  { name: 'TRAPPIST-1', km: 40.7 * LJ, label: '41 Lichtjahre', look: 'trappist', size: 30, note: 'sieben erdgroße Planeten' },
+  { name: 'Orionnebel', km: 1344 * LJ, label: '1.344 Lichtjahre', look: 'nebula', size: 62, note: 'hier entstehen Sterne' },
+  { name: 'Sagittarius A*', km: 27000 * LJ, label: '27.000 Lichtjahre', look: 'hole', size: 40, note: 'Schwarzes Loch im Zentrum der Milchstraße' },
+  { name: 'Große Magellansche Wolke', km: 160000 * LJ, label: '160.000 Lichtjahre', look: 'cloud', size: 58, note: 'Nachbargalaxie' },
+  { name: 'Andromeda', km: 2.5e6 * LJ, label: '2,5 Mio. Lichtjahre', look: 'spiral', size: 66, note: 'nächste große Galaxie' },
+  { name: 'JADES-GS-z14-0', km: 13.4e9 * LJ, label: '13,4 Mrd. Lichtjahre', look: 'faint', size: 40, note: 'eine der fernsten Galaxien · JWST 2024' },
+  { name: 'Hintergrundstrahlung', km: 13.8e9 * LJ, label: '13,8 Mrd. Lichtjahre', look: 'cmb', size: 70, note: 'Rand des beobachtbaren Universums' }
 ];
-// Massstab: Die Strecke bis zum naechsten Planeten ist eine Anzahl Gesteinsfelder.
-// Echte Luecke in AE hoch 0,3: innen kurz (3–4 Felder), aussen lang (10 Felder) – aus 40:1 wird 3:1.
-const AU = 149.6, COLS_K = 4.9, GAP_P = 0.3;
+// Massstab logarithmisch: jede Verzehnfachung der Entfernung bringt gut zwei Huegel mehr.
+// Innen 3–4 Huegel pro Ziel, der Sprung zu Proxima und zu JADES 11–12 Huegel.
 {
-  let last = 0;
-  for (const b of BODIES) {
-    b.cols = Math.max(3, Math.round(COLS_K * Math.pow((b.dist - last) / AU, GAP_P)));
-    last = b.dist;
-    b.size = 2.2 * (6.5 + 5.5 * Math.log(b.diam / 4879));   // Groesse, logarithmisch
-    b.label = b.dist < 1000 ? Math.round(b.dist) + ' Mio. km'
-      : (Math.round(b.dist / 10) / 100).toFixed(2).replace('.', ',') + ' Mrd. km';
-  }
+  let prevKm = 0;
+  STAGES.forEach((s, i) => {
+    s.hills = i === 0 ? 3 : Math.max(3, Math.min(12, 3 + Math.round(2.4 * Math.log10(s.km / prevKm))));
+    s.amp = Math.min(210, 95 + i * 7);
+    s.len = Math.min(470, 300 + i * 10);
+    s.bonus = Math.max(3, Math.min(10, s.hills * 0.9));     // Licht-Bonus fuer die naechste Strecke
+    prevKm = s.km;
+  });
 }
-const TOTAL = BODIES.reduce((s, b) => s + b.cols, 0);
+const HILLS_TOTAL = STAGES.reduce((a, s) => a + s.hills, 0);
 
 // ---------- Leinwand ----------
 const cv = document.getElementById('tz'), ctx = cv.getContext('2d');
@@ -150,124 +160,149 @@ function panel(x, y, w, h) {
 function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {} }
 
 // ---------- Zustand ----------
-let K = SETS[0], pal = -1, best = 0, showTitle = true;
-try { best = +localStorage.getItem('trabant.flug.best') || 0; } catch (_) {}
-let state = 'ready', prev = 'play', cause = '';
-let ship, dist, cursor, cols, planets, belt, sun, bits, trail, pops, specks, clouds;
-let genSec, colsLeft, lastGy, sec, runde, score, lapPassed;
-let t = 0, deadT = 0, flash = 0, shake = 0, lapT = 0, lapBuilt = false, intro = 0, banner = null, gx = 0, gy = 0;
+let K = SETS[0], palBase = 0, best = 0, showTitle = true;
+try { best = +localStorage.getItem('trabant.wings.best') || 0; } catch (_) {}
+let state = 'ready', prev = 'play', holding = false;
+let c, nodes, ends, genStage, stage, stageStart, light, score, chain, fever, airT, groundT, hillsDone;
+let trail, bits, pops, specks, clouds, bodyVis;
+let zoom = 1, camX = 0, camY = 0, bottomY = 200;
+let t = 0, deadT = 0, flash = 0, shake = 0, intro = 0, banner = null, gx = 0, gy = 0;
 
-function params() {
-  const level = (runde - 1) * BODIES.length + sec + 1, k = Math.min(1, (level - 1) / LEVELS_TO_MAX);
-  return {
-    level,
-    speed: SPEED[0] + (SPEED[1] - SPEED[0]) * k,
-    gap: GAP[0] + (GAP[1] - GAP[0]) * k,
-    spacing: SPACING[0] + (SPACING[1] - SPACING[0]) * k
-  };
-}
-
-// Ein Gesteinsfeld: Brocken oben und unten, dazwischen die Luecke
-function makeCol(wx) {
-  const p = params(), lo = 70 + p.gap / 2, hi = H - 70 - p.gap / 2;
-  const gy = clamp(lastGy + rnd(-MAX_SHIFT, MAX_SHIFT), lo, hi);
-  lastGy = gy;
-  const top = gy - p.gap / 2, bot = gy + p.gap / 2, rocks = [];
-  const rock = (y, r) => ({ dx: rnd(-5, 5), y, r, w: wob(26, 0.07), rot: rnd(0, 6.3), spin: rnd(-0.4, 0.4) });
-  // Der Brocken am Lueckenrand sitzt genau auf der Kante, der Rest stapelt sich bis zum Rand
-  let r = COL_W / 2 * rnd(0.85, 1), y = top - r;
-  while (y > -r) { rocks.push(rock(y, r)); r = COL_W / 2 * rnd(0.75, 1); y -= r * rnd(0.95, 1.2); }
-  r = COL_W / 2 * rnd(0.85, 1); y = bot + r;
-  while (y < H + r) { rocks.push(rock(y, r)); r = COL_W / 2 * rnd(0.75, 1); y += r * rnd(0.95, 1.2); }
-  return { wx, gy, gap: p.gap, rocks, passed: false };
-}
-
-function visuals(p) {
-  p.wr = wob(40, 0.028); p.wc = wob(34, 0.05);
-  p.ox = rnd(-2.6, 2.6); p.oy = rnd(-2.6, 2.6);
-  p.rs = rnd(-0.22, 0.22); p.cs = rnd(-0.4, 0.4);
-  p.phase = rnd(0, 6.283);
-  return p;
-}
-
-// Legt Felder und Planeten vor dem Kometen aus, solange etwas ins Bild kommt
-function generate() {
-  while (cursor < dist + W + 140 && genSec < BODIES.length) {
-    const p = params();
-    if (colsLeft > 0) { cols.push(makeCol(cursor)); colsLeft--; cursor += p.spacing; continue; }
-    const b = BODIES[genSec], pad = b.size * (b.look === 'ring' ? 2.3 : 1) + 80;
-    const pl = visuals({ b, idx: genSec, wx: cursor - p.spacing + COL_W / 2 + pad, y: rnd(0.32, 0.68) * H, passed: false });
-    planets.push(pl);
-    cursor = pl.wx + pad + COL_W / 2;
-    if (b.name === 'Mars') {
-      // Asteroidenguertel zwischen Mars und Jupiter
-      const len = BODIES[genSec + 1].cols * p.spacing;
-      for (let i = 0; i < 150; i++) belt.push({ wx: cursor + rnd(0, len), y: rnd(0, H), s: rnd(0.5, 1.7), al: rnd(0.18, 0.5) });
-      belt.push({ wx: cursor + len / 2, y: H - 30, label: 'Asteroidengürtel' });
-    }
-    genSec++;
-    colsLeft = genSec < BODIES.length ? BODIES[genSec].cols : 0;
-  }
-}
-
-function startLap() {
-  cols = []; planets = []; belt = [];
-  genSec = 0; colsLeft = BODIES[0].cols; sec = 0; lapPassed = 0;
-  lastGy = H / 2;
-  sun = visuals({ wx: dist + 5, y: H * 0.5 });
-  cursor = dist + W + 60;
-}
-function reset() {
-  let n = Math.floor(Math.random() * SETS.length);
-  if (n === pal) n = (n + 1) % SETS.length;
-  pal = n; K = SETS[n];
+function setPalette(i) {
+  K = SETS[(palBase + i) % SETS.length];
   dotsP = makeDots(K.paper);
   document.body.style.background = K.paper;
   if (meta) meta.setAttribute('content', K.paper);
-  ship = { y: H * 0.45, vy: 0 };
-  dist = 0; score = 0; runde = 1; deadT = 0; flash = 0; shake = 0; cause = ''; banner = null; lapT = 0;
-  bits = []; trail = []; pops = [];
-  startLap();
+}
+
+// ---------- Gelaende: Raumzeit-Huegel ----------
+// Knoten wechseln zwischen Kuppe und Tal, dazwischen eine halbe Kosinuswelle
+function genNext() {
+  const i = Math.min(genStage, STAGES.length - 1), s = STAGES[i];
+  let last = nodes[nodes.length - 1];
+  for (let h = 0; h < s.hills; h++) {
+    const ramp = h === s.hills - 1;
+    const valley = { x: last.x + s.len * rnd(0.85, 1.15), y: s.amp * rnd(0.6, 1), peak: false };
+    const peak = { x: valley.x + s.len * rnd(0.85, 1.15) * (ramp ? 1.25 : 1), y: -s.amp * (ramp ? 1.45 : rnd(0.55, 1)), peak: true };
+    nodes.push(valley, peak);
+    last = peak;
+  }
+  if (genStage < STAGES.length) ends.push({ x: last.x, i: genStage });
+  genStage++;
+}
+function seg(x) {
+  let lo = 0, hi = nodes.length - 2;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (nodes[m].x <= x) lo = m; else hi = m - 1; }
+  return lo;
+}
+function ground(x) {
+  const i = seg(x), a = nodes[i], b = nodes[i + 1], u = clamp((x - a.x) / (b.x - a.x), 0, 1);
+  return a.y + (b.y - a.y) * (1 - Math.cos(Math.PI * u)) / 2;
+}
+function slope(x) {
+  const i = seg(x), a = nodes[i], b = nodes[i + 1], u = clamp((x - a.x) / (b.x - a.x), 0, 1);
+  return (b.y - a.y) * Math.PI / (2 * (b.x - a.x)) * Math.sin(Math.PI * u);
+}
+
+function visuals() {
+  return { wr: wob(40, 0.028), wc: wob(34, 0.05), ox: rnd(-2.6, 2.6), oy: rnd(-2.6, 2.6), cs: rnd(-0.4, 0.4), phase: rnd(0, 6.283),
+    pts: Array.from({ length: 70 }, () => ({ a: rnd(0, 6.283), r: Math.sqrt(Math.random()), s: rnd(0.5, 1.8), k: Math.random() })) };
+}
+
+function reset() {
+  palBase = Math.floor(Math.random() * SETS.length);
+  setPalette(0);
+  nodes = [{ x: -500, y: 80, peak: false }, { x: 0, y: -70, peak: true }];
+  ends = []; genStage = 0;
+  genNext(); genNext();
+  stage = 0; stageStart = 0; hillsDone = 0;
+  c = { x: 0, y: -70, vx: START_V, vy: 0, onGround: true };
+  light = LIGHT_START; score = 0; chain = 0; fever = 0; airT = 0; groundT = 0;
+  holding = false; deadT = 0; flash = 0; shake = 0; banner = null;
+  trail = []; bits = []; pops = [];
+  bodyVis = visuals();
+  zoom = 0.66; bottomY = STAGES[0].amp + 110; camX = c.x - W * 0.28; camY = bottomY - H / zoom;
   state = 'ready';
   intro = showTitle ? 0 : 2.4;
   specks = [];
-  for (let i = 0; i < 90; i++) specks.push({ x: rnd(0, W * 3), y: rnd(0, H), s: rnd(0.5, 1.9), p: rnd(0.06, 0.26), a: rnd(0.2, 0.7), ph: rnd(0, 6.3), pk: Math.random() < 0.15 });
+  for (let i = 0; i < 110; i++) specks.push({ x: rnd(0, W * 3), y: rnd(0, H), s: rnd(0.5, 1.9), p: rnd(0.03, 0.15), a: rnd(0.2, 0.7), ph: rnd(0, 6.3), pk: Math.random() < 0.15 });
   clouds = [];
-  for (let i = 0; i < 4; i++) clouds.push({ x: rnd(0, W * 3), y: rnd(60, H - 60), r: rnd(70, 170), w: wob(30, 0.12), sp: rnd(-0.06, 0.06) });
+  for (let i = 0; i < 4; i++) clouds.push({ x: rnd(0, W * 3), y: rnd(40, H * 0.6), r: rnd(70, 170), w: wob(30, 0.12), sp: rnd(-0.06, 0.06) });
 }
 
-function burst(x, y, n, sp) {
+function burst(x, y, n, sp, cols) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * 6.283, v = sp * (0.35 + Math.random());
-    bits.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, r: rnd(0.8, 2.7), c: Math.random() < 0.5 ? K.a : K.b });
+    bits.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, r: rnd(0.8, 2.7), c: (cols || [K.a, K.b])[i % 2] });
   }
 }
-function flap() {
-  ship.vy = FLAP;
-  for (let i = 0; i < 4; i++)
-    bits.push({ x: SHIP_X - 6, y: ship.y + rnd(-3, 3), vx: rnd(-150, -60), vy: rnd(20, 90), life: 0.7, r: rnd(0.8, 1.8), c: Math.random() < 0.5 ? K.a : K.cream });
+// Einblendung ueber dem Kometen, damit das Ziel am Himmel frei bleibt
+function pop(a, b, col) { pops.push({ x: clamp(SHIP_SX() + 60, 80, W - 80), y: clamp(SHIP_SY() - 70, H * 0.45, H - 60), a, b, col: col || K.a, life: 1.4 }); }
+
+// Landung: flach auf einem Abhang = perfekt, steil oder bergauf = holprig
+function land(tx, ty, vt) {
+  if (airT < 0.25) return vt;
+  const sp = Math.hypot(c.vx, c.vy), sinA = Math.abs(c.vx * ty - c.vy * tx) / sp;
+  if (ty > 0.05 && sinA < PERFECT) {
+    chain++;
+    const pts = fever > 0 ? 20 : 10;
+    score += pts;
+    vt = vt * 1.06 + 70;
+    burst(SHIP_SX(), SHIP_SY(), 8, 70);
+    if (chain >= FEVER_CHAIN) { chain = 0; fever = FEVER_T; pop('Fieber!', 'doppelte Punkte, mehr Tempo', K.b); buzz([20, 30, 20]); }
+    else pop('Perfekt  +' + pts, airT > 1.3 ? 'weiter Sprung' : '');
+    buzz(12);
+  } else if (sinA > 0.55) {
+    chain = 0;
+    vt *= 0.6;
+    shake = Math.max(shake, 0.12);
+    pop('Holprig', '', K.cream);
+  }
+  if (airT > 1.3) score += fever > 0 ? 40 : 20;
+  return vt;
 }
-function arrive(p) {
-  const b = p.b;
-  sec = p.idx + 1;
+const SHIP_SX = () => (c.x - camX) * zoom, SHIP_SY = () => (c.y - camY) * zoom;
+
+function physics(dt) {
+  const heavy = holding && state === 'play';
+  const g = heavy ? G_HOLD : (state === 'night' ? G * 1.5 : G);
+  c.vy += g * dt;
+  if (fever > 0) c.vx += 200 * dt;
+  c.x += c.vx * dt; c.y += c.vy * dt;
+  const gy = ground(c.x);
+  if (c.y >= gy) {
+    const s = slope(c.x), n = Math.hypot(1, s), tx = 1 / n, ty = s / n;
+    let vt = c.vx * tx + c.vy * ty;
+    if (!c.onGround) vt = land(tx, ty, vt);
+    vt *= 1 - 0.06 * dt;
+    vt = clamp(vt, MIN_V / tx, MAX_V);
+    c.y = gy; c.vx = vt * tx; c.vy = vt * ty; c.onGround = true; airT = 0;
+  } else if (c.y < gy - 1.5) {
+    if (c.onGround) { c.onGround = false; airT = 0; }
+    airT += dt;
+    if (c.vx < MIN_V) c.vx = MIN_V;
+  }
+}
+
+function arrive(i) {
+  const s = STAGES[i];
+  stage = i + 1; stageStart = c.x; hillsDone += s.hills;
   flash = 1.6;
-  if (p.idx === BODIES.length - 1) {
-    score += 5;
-    pops.push({ x: W / 2, y: H * 0.42, a: '+5', b: 'Neptun erreicht', life: 2.2 });
-    state = 'lap'; lapT = 0; lapBuilt = false; banner = null;
-    buzz(40);
+  score += 50;
+  if (i === STAGES.length - 1) {
+    state = 'win'; deadT = 0; holding = false;
+    if (score > best) saveBest();
+    buzz([40, 60, 40, 60, 80]);
     return;
   }
-  banner = { a: b.name + ' erreicht', b: b.label + ' von der Sonne · Level ' + params().level };
+  const bonus = STAGES[i + 1].bonus;
+  light += bonus;
+  banner = { a: s.name + ' erreicht', b: s.label + (s.note ? ' · ' + s.note : ''), c: '+' + Math.round(bonus) + ' s Licht · +50' };
+  setPalette(stage);
+  bodyVis = visuals();
   buzz([25, 40, 25]);
 }
-function die(c) {
-  cause = c; state = 'over'; deadT = 0;
-  burst(SHIP_X, ship.y, 22, 140);
-  shake = c === 'rock' ? 0.32 : 0.18;
-  buzz(c === 'rock' ? 60 : 35);
-  if (score > best) { best = score; try { localStorage.setItem('trabant.flug.best', String(best)); } catch (_) {} }
-}
+function saveBest() { best = Math.floor(score); try { localStorage.setItem('trabant.wings.best', String(best)); } catch (_) {} }
 
 // ---------- Eingabe ----------
 let wantFull = true;
@@ -280,12 +315,13 @@ function goFullscreen() {
 }
 function press() {
   goFullscreen();
-  if (state === 'ready') { state = 'play'; showTitle = false; flap(); }
-  else if (state === 'play') flap();
+  if (state === 'ready') { state = 'play'; showTitle = false; holding = true; }
+  else if (state === 'play') holding = true;
   else if (state === 'paused') state = prev;
-  else if (state === 'over' && deadT > 0.6) reset();
+  else if ((state === 'over' || state === 'win') && deadT > 0.8) reset();
 }
-function pause() { if (state === 'play' || state === 'lap') { prev = state; state = 'paused'; } }
+function release() { holding = false; }
+function pause() { if (state === 'play' || state === 'night') { prev = state; state = 'paused'; holding = false; } }
 
 // ---------- Logik ----------
 function update(dt) {
@@ -300,187 +336,255 @@ function update(dt) {
     b.x += b.vx * dt; b.y += b.vy * dt; b.vy += 70 * dt; b.vx *= 0.985; b.life -= dt * 1.05;
     if (b.life <= 0) bits.splice(i, 1);
   }
-  for (let i = pops.length - 1; i >= 0; i--) {
-    const pp = pops[i]; pp.life -= dt; pp.y -= 22 * dt;
-    if (pp.life <= 0) pops.splice(i, 1);
-  }
+  for (let i = pops.length - 1; i >= 0; i--) { const pp = pops[i]; pp.life -= dt; pp.y -= 20 * dt; if (pp.life <= 0) pops.splice(i, 1); }
+  if (pops.length > 2) pops.shift();
 
-  const p = params();
-  if (state === 'ready') {
-    ship.y = H * 0.45 + Math.sin(t * 3) * 8; ship.vy = 0;
-  } else if (state === 'play') {
-    if (lapT > 0 && lapT < 2.8) lapT += dt;
-    dist += p.speed * dt;
-    generate();
-    ship.vy = Math.min(ship.vy + GRAVITY * dt, MAX_FALL);
-    ship.y += ship.vy * dt;
-    const sx = dist + SHIP_X;
-    for (const c of cols) {
-      if (!c.passed && c.wx + COL_W / 2 < sx - SHIP_R) { c.passed = true; score++; lapPassed++; }
-    }
-    for (const pl of planets) if (!pl.passed && pl.wx < sx) { pl.passed = true; arrive(pl); }
+  if (state === 'play' || state === 'night') {
+    const x0 = c.x;
+    for (let k = 0; k < 4; k++) physics(dt / 4);
+    score += (c.x - x0) / 40 * (fever > 0 ? 2 : 1);
+    if (fever > 0) fever -= dt;
+    while (ends.length && c.x >= ends[0].x) { const e = ends.shift(); arrive(e.i); if (state === 'win') break; }
+    while (nodes[nodes.length - 1].x < camX + W / 0.3 + 600) genNext();
+    while (nodes.length > 4 && nodes[2].x < camX - 300) nodes.shift();
     if (state === 'play') {
-      if (ship.y - SHIP_R < 0 || ship.y + SHIP_R > H) die('void');
-      else for (const c of cols) {
-        if (Math.abs(c.wx - sx) > COL_W) continue;
-        for (const r of c.rocks)
-          if (Math.hypot(c.wx + r.dx - sx, r.y - ship.y) < r.r * 0.92 + SHIP_R) { die('rock'); break; }
-        if (state !== 'play') break;
-      }
+      light -= dt;
+      if (light <= 0) { light = 0; state = 'night'; holding = false; groundT = 0; pop('Das Licht erlischt', 'der Komet gleitet aus', K.cream); }
+    } else if (state === 'night') {
+      // Wie bei Tiny Wings: Ist das Licht weg, endet der Flug bei der naechsten Landung
+      c.vx *= 1 - 0.5 * dt;
+      groundT = c.onGround ? groundT + dt : 0;
+      if (groundT > 0.6) { state = 'over'; deadT = 0; if (score > best) saveBest(); }
     }
-  } else if (state === 'lap') {
-    // Neptun erreicht: Komet gleitet, ausblenden, neue Runde ab der Sonne
-    lapT += dt;
-    dist += p.speed * dt;
-    ship.vy = 0; ship.y += (H * 0.45 - ship.y) * Math.min(1, dt * 2);
-    if (lapT >= 2.3 && !lapBuilt) { lapBuilt = true; runde++; startLap(); flash = 1.6; banner = { a: 'Runde ' + runde + ' · schneller', b: 'wieder ab der Sonne' }; }
-    if (lapT >= 2.5) { state = 'play'; ship.vy = FLAP * 0.6; }
-  } else if (state === 'over') {
+  } else if (state === 'over' || state === 'win') {
     deadT += dt;
-    if (cause === 'void') ship.y += ship.vy * dt * 0.3;
+    if (state === 'win') { for (let k = 0; k < 4; k++) physics(dt / 4); while (nodes[nodes.length - 1].x < camX + W / 0.3 + 600) genNext(); }
   }
 
-  if (state === 'over') { if (trail.length) trail.shift(); }
-  else { trail.push({ wx: dist + SHIP_X, y: ship.y }); if (trail.length > 26) trail.shift(); }
-  cols = cols.filter(c => c.wx - dist > -COL_W * 2);
-  planets = planets.filter(q => q.wx - dist > -260);
-  belt = belt.filter(d => d.wx - dist > -120);
+  if (state !== 'ready') { trail.push({ x: c.x, y: c.y }); if (trail.length > 30) trail.shift(); }
+
+  // Kamera: zoomt heraus, wenn der Komet hoch fliegt
+  const si = Math.min(stage, STAGES.length - 1);
+  bottomY += (STAGES[si].amp * 1.45 * 0.75 + 110 - bottomY) * Math.min(1, dt * 1.5);
+  const need = bottomY - (c.y - 90);
+  const zt = clamp(H * 0.92 / need, 0.3, 0.66);
+  zoom += (zt - zoom) * Math.min(1, dt * 3);
+  camX = c.x - W * 0.28 / zoom;
+  camY = bottomY - H / zoom;
+}
+
+// ---------- Zeichnen: Himmelskoerper ----------
+function ringHalf(x, y, b, sat, front) {
+  const rx = b * (sat ? 2.25 : 1.75), ry = b * (sat ? 0.62 : 0.4);
+  const a0 = front ? 0 : Math.PI, a1 = front ? Math.PI : 2 * Math.PI;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(sat ? -0.32 : 1.35);
+  ctx.strokeStyle = K.cream;
+  ctx.globalAlpha = sat ? 0.9 : 0.6; ctx.lineWidth = sat ? 4 : 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, a0, a1); ctx.stroke();
+  if (sat) { ctx.globalAlpha = 0.6; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(0, 0, rx * 0.8, ry * 0.8, 0, a0, a1); ctx.stroke(); }
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+function inkBall(x, y, r, col, sh, v) {
+  const br = 1 + 0.35 * Math.sin(t * 0.9 + v.phase), crot = -t * v.cs;
+  ctx.globalAlpha = 0.5; ctx.fillStyle = sh; inkPath(x - v.ox * br, y - v.oy * br, r, v.wc, crot); ctx.fill();
+  ctx.globalAlpha = 0.95; ctx.fillStyle = col; inkPath(x, y, r, v.wc, crot); ctx.fill();
+  ctx.globalAlpha = 0.3; ctx.fillStyle = dotsP; inkPath(x, y, r, v.wc, crot); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+function drawBody(s, x, y, b, v) {
+  const look = s.look;
+  if (s.col) {
+    const col = K[s.col], sh = s.col === 'b' ? K.a : K.b;
+    if (look === 'ring' || look === 'tilt') ringHalf(x, y, b, look === 'ring', false);
+    inkBall(x, y, b, col, sh, v);
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, b * 0.98, 0, 6.283); ctx.clip();
+    if (look === 'bands') {
+      ctx.globalAlpha = 0.55; ctx.fillStyle = K.a;
+      for (const [off, h] of [[-0.6, 0.16], [-0.22, 0.2], [0.18, 0.14], [0.52, 0.12]]) ctx.fillRect(x - b, y + off * b, 2 * b, h * b);
+      ctx.globalAlpha = 0.9; ctx.fillStyle = K.b;
+      ctx.beginPath(); ctx.ellipse(x + 0.32 * b, y + 0.32 * b, 0.24 * b, 0.13 * b, 0, 0, 6.283); ctx.fill();
+    } else if (look === 'rock') {
+      ctx.globalAlpha = 0.3; ctx.fillStyle = K.paper;
+      for (const [cx, cy, cr] of [[-0.35, -0.2, 0.24], [0.32, 0.22, 0.17], [0.02, 0.5, 0.13]]) dot(x + cx * b, y + cy * b, cr * b);
+    } else if (look === 'spot') {
+      ctx.globalAlpha = 0.5; ctx.fillStyle = K.paper;
+      ctx.beginPath(); ctx.ellipse(x - 0.25 * b, y - 0.12 * b, 0.27 * b, 0.15 * b, -0.2, 0, 6.283); ctx.fill();
+    } else if (look === 'pluto') {
+      // das helle Herz (Tombaugh Regio)
+      ctx.globalAlpha = 0.9; ctx.fillStyle = K.paper;
+      dot(x - 0.15 * b, y + 0.1 * b, 0.62 * b);
+      ctx.fillStyle = K.cream;
+      dot(x + 0.12 * b, y + 0.12 * b, 0.26 * b); dot(x + 0.36 * b, y + 0.12 * b, 0.26 * b);
+      ctx.beginPath(); ctx.moveTo(x - 0.14 * b, y + 0.2 * b); ctx.lineTo(x + 0.62 * b, y + 0.2 * b); ctx.lineTo(x + 0.24 * b, y + 0.62 * b); ctx.fill();
+    }
+    ctx.restore(); ctx.globalAlpha = 1;
+    if (look === 'veil') { ctx.globalAlpha = 0.35; ctx.strokeStyle = K.cream; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, b + 4.5, 0, 6.283); ctx.stroke(); }
+    if (look === 'moon') { const a = t * 0.8 + v.phase; ctx.globalAlpha = 0.9; ctx.fillStyle = K.cream; dot(x + Math.cos(a) * (b + 10), y + Math.sin(a) * (b + 10), 3.2); }
+    if (look === 'ring' || look === 'tilt') ringHalf(x, y, b, look === 'ring', true);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (look === 'helio') {
+    // Bugwelle der Sonnenblase und Voyager 1
+    ctx.strokeStyle = K.b; ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) {
+      ctx.globalAlpha = 0.6 - k * 0.17;
+      ctx.beginPath(); ctx.arc(x + b * 1.2 + k * 12, y, b * (1.3 + k * 0.25), Math.PI * 0.62, Math.PI * 1.38); ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.fillStyle = K.cream;
+    ctx.save(); ctx.translate(x - b * 0.1, y); ctx.rotate(Math.sin(t) * 0.1);
+    ctx.fillRect(-2, -2, 9, 4); ctx.strokeStyle = K.cream; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(-6, 0, 7, -1.2, 1.2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(20, -6); ctx.stroke();
+    ctx.restore();
+  } else if (look === 'star' || look === 'trappist') {
+    ctx.fillStyle = K.a;
+    for (const [k, a] of [[2, 0.07], [1.5, 0.12]]) { ctx.globalAlpha = a * (0.85 + 0.15 * Math.sin(t * 2 + k)); inkPath(x, y, b * k, v.wr, t * 0.05 * k); ctx.fill(); }
+    inkBall(x, y, b * (look === 'star' ? 0.7 : 0.55), K.a, K.b, v);
+    const n = look === 'star' ? 1 : 7;
+    for (let k = 0; k < n; k++) {
+      const r = b * (look === 'star' ? 1.5 : 0.8 + k * 0.17), a = t * (1.2 - k * 0.12) + k * 1.7;
+      ctx.globalAlpha = 0.25; ctx.strokeStyle = K.cream; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.35, 0, 0, 6.283); ctx.stroke();
+      ctx.globalAlpha = 1; ctx.fillStyle = look === 'star' ? K.b : K.cream;
+      dot(x + Math.cos(a) * r, y + Math.sin(a) * r * 0.35, look === 'star' ? 4 : 2.4);
+    }
+  } else if (look === 'nebula') {
+    for (let k = 0; k < 5; k++) {
+      ctx.globalAlpha = 0.22; ctx.fillStyle = k % 2 ? K.a : K.b;
+      inkPath(x + Math.cos(k * 1.3) * b * 0.45, y + Math.sin(k * 2.1) * b * 0.3, b * (0.55 + k * 0.08), v.wc, t * 0.03 * (k + 1)); ctx.fill();
+    }
+    ctx.fillStyle = K.cream;
+    for (const p of v.pts.slice(0, 25)) { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 2 + p.a * 5); dot(x + Math.cos(p.a) * p.r * b, y + Math.sin(p.a) * p.r * b * 0.7, p.s * 0.8); }
+  } else if (look === 'hole') {
+    ctx.save(); ctx.translate(x, y);
+    for (let k = 0; k < 3; k++) {
+      ctx.globalAlpha = 0.9 - k * 0.25; ctx.strokeStyle = k === 1 ? K.b : K.a; ctx.lineWidth = b * (0.34 - k * 0.08);
+      inkPath(0, 0, b * (0.85 + k * 0.12), v.wr, t * (0.6 - k * 0.2)); ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.fillStyle = '#000'; dot(0, 0, b * 0.62);
+    ctx.restore();
+  } else if (look === 'cmb') {
+    // gefleckte Karte der Hintergrundstrahlung (wie Planck)
+    ctx.save(); ctx.beginPath(); ctx.ellipse(x, y, b * 1.5, b * 0.8, 0, 0, 6.283); ctx.clip();
+    ctx.globalAlpha = 0.5; ctx.fillStyle = K.deep; ctx.fillRect(x - b * 1.6, y - b, b * 3.2, b * 2);
+    for (const p of v.pts) { ctx.globalAlpha = 0.35; ctx.fillStyle = p.k < 0.5 ? K.a : K.b; dot(x + Math.cos(p.a) * p.r * b * 1.5, y + Math.sin(p.a) * p.r * b * 0.8, p.s * b * 0.05); }
+    ctx.restore();
+    ctx.globalAlpha = 0.7; ctx.strokeStyle = K.cream; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.ellipse(x, y, b * 1.5, b * 0.8, 0, 0, 6.283); ctx.stroke();
+  } else if (look === 'spiral') {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-0.6); ctx.scale(1, 0.38);
+    ctx.globalAlpha = 0.2; ctx.fillStyle = K.b; dot(0, 0, b);
+    for (let arm = 0; arm < 2; arm++) for (let k = 0; k < 60; k++) {
+      const u = k / 60, a = arm * Math.PI + u * 7 + t * 0.05, r = b * (0.12 + u * 0.9);
+      ctx.globalAlpha = 0.8 * (1 - u * 0.6); ctx.fillStyle = k % 3 ? K.cream : K.a;
+      dot(Math.cos(a) * r, Math.sin(a) * r, 2.6 * (1 - u * 0.5));
+    }
+    ctx.globalAlpha = 1; ctx.fillStyle = K.cream; dot(0, 0, b * 0.16);
+    ctx.restore();
+  } else if (look === 'cloud') {
+    ctx.globalAlpha = 0.15; ctx.fillStyle = K.b; inkPath(x, y, b * 0.9, v.wc, 0); ctx.fill();
+    for (const p of v.pts) { ctx.globalAlpha = 0.35 + 0.5 * p.k; ctx.fillStyle = p.k < 0.2 ? K.a : K.cream; dot(x + Math.cos(p.a) * p.r * b * 1.2 + (p.k - 0.5) * b * 0.5, y + Math.sin(p.a) * p.r * b * 0.6, p.s); }
+  } else if (look === 'faint') {
+    // winziger roter Fleck im Suchrahmen
+    ctx.globalAlpha = 0.6; ctx.strokeStyle = K.cream; ctx.lineWidth = 1.2;
+    ctx.strokeRect(x - b * 0.6, y - b * 0.6, b * 1.2, b * 1.2);
+    ctx.beginPath(); ctx.moveTo(x + b * 0.6, y - b * 0.6); ctx.lineTo(x + b * 1.4, y - b * 1.3); ctx.stroke();
+    ctx.globalAlpha = 0.9; ctx.fillStyle = K.a; inkPath(x, y, b * 0.13, v.wc, t * 0.3); ctx.fill();
+    ctx.globalAlpha = 0.4; ctx.fillStyle = K.b; dot(x - 2, y + 2, b * 0.1);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // ---------- Zeichnen ----------
-function ringHalf(p, front, base) {
-  const sat = p.b.look === 'ring', body = p.b.size;
-  const rx = body * (sat ? 2.25 : 1.75), ry = body * (sat ? 0.62 : 0.4);
-  const a0 = front ? 0 : Math.PI, a1 = front ? Math.PI : 2 * Math.PI;
-  ctx.save(); ctx.translate(p.wx, p.y); ctx.rotate(sat ? -0.32 : 1.35);
-  ctx.strokeStyle = K.cream;
-  ctx.globalAlpha = (sat ? 0.9 : 0.6) * base; ctx.lineWidth = sat ? 4 : 2;
-  ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, a0, a1); ctx.stroke();
-  if (sat) {
-    ctx.globalAlpha = 0.6 * base; ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.ellipse(0, 0, rx * 0.8, ry * 0.8, 0, a0, a1); ctx.stroke();
+function drawTerrain() {
+  const pts = [];
+  for (let sx = -8; sx <= W + 8; sx += 5) { const wx = camX + sx / zoom; pts.push([sx, (ground(wx) - camY) * zoom]); }
+  // Fuellung
+  ctx.beginPath(); ctx.moveTo(-10, H + 10);
+  for (const p of pts) ctx.lineTo(p[0], p[1]);
+  ctx.lineTo(W + 10, H + 10); ctx.closePath();
+  ctx.globalAlpha = 1; ctx.fillStyle = K.deep; ctx.fill();
+  ctx.globalAlpha = 0.25; ctx.fillStyle = dotsP; ctx.fill();
+  // Raumzeit-Gitter: Hoehenlinien und senkrechte Linien
+  ctx.strokeStyle = K.cream; ctx.lineWidth = 1;
+  for (const [off, al] of [[26, 0.18], [58, 0.12], [100, 0.07]]) {
+    ctx.globalAlpha = al; ctx.setLineDash([3, 6]); ctx.beginPath();
+    pts.forEach((p, i) => { const y = p[1] + off * zoom; if (i) ctx.lineTo(p[0], y); else ctx.moveTo(p[0], y); });
+    ctx.stroke();
   }
-  ctx.restore();
+  ctx.setLineDash([]);
+  const step = 70, first = Math.ceil(camX / step) * step;
+  ctx.globalAlpha = 0.09;
+  for (let wx = first; wx < camX + W / zoom; wx += step) {
+    const sx = (wx - camX) * zoom, sy = (ground(wx) - camY) * zoom;
+    ctx.beginPath(); ctx.moveTo(sx, sy + 6); ctx.lineTo(sx, H); ctx.stroke();
+  }
+  // Kante mit verrutschtem Farbauszug
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.5; ctx.strokeStyle = K.a; ctx.lineWidth = 3;
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0] - 2.5, p[1] + 2.5) : ctx.moveTo(p[0] - 2.5, p[1] + 2.5)); ctx.stroke();
+  ctx.globalAlpha = 0.95; ctx.strokeStyle = K.b; ctx.lineWidth = 3;
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke();
+  ctx.globalAlpha = 1;
+  // Zielfahne am Ende der Strecke
+  for (const e of ends) {
+    const sx = (e.x - camX) * zoom;
+    if (sx < -20 || sx > W + 20) continue;
+    const sy = (ground(e.x) - camY) * zoom;
+    ctx.strokeStyle = K.cream; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.8;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy - 46 * zoom); ctx.stroke();
+    ctx.fillStyle = K.a; ctx.beginPath(); ctx.moveTo(sx, sy - 46 * zoom); ctx.lineTo(sx + 18 * zoom, sy - 40 * zoom); ctx.lineTo(sx, sy - 34 * zoom); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 }
-function features(p, base) {
-  const b = p.b.size, x = p.wx, y = p.y, look = p.b.look;
-  ctx.save();
-  ctx.beginPath(); ctx.arc(x, y, b * 0.98, 0, 6.283); ctx.clip();
-  if (look === 'bands') {
-    ctx.globalAlpha = 0.55 * base; ctx.fillStyle = K.a;
-    for (const [off, h] of [[-0.6, 0.16], [-0.22, 0.2], [0.18, 0.14], [0.52, 0.12]]) ctx.fillRect(x - b, y + off * b, 2 * b, h * b);
-    ctx.globalAlpha = 0.9 * base; ctx.fillStyle = K.b;
-    ctx.beginPath(); ctx.ellipse(x + 0.32 * b, y + 0.32 * b, 0.24 * b, 0.13 * b, 0, 0, 6.283); ctx.fill();
-  } else if (look === 'rock') {
-    ctx.globalAlpha = 0.3 * base; ctx.fillStyle = K.paper;
-    for (const [cx, cy, cr] of [[-0.35, -0.2, 0.24], [0.32, 0.22, 0.17], [0.02, 0.5, 0.13]]) dot(x + cx * b, y + cy * b, cr * b);
-  } else if (look === 'spot') {
-    ctx.globalAlpha = 0.5 * base; ctx.fillStyle = K.paper;
-    ctx.beginPath(); ctx.ellipse(x - 0.25 * b, y - 0.12 * b, 0.27 * b, 0.15 * b, -0.2, 0, 6.283); ctx.fill();
-  }
-  ctx.restore();
-  if (look === 'veil') {
-    ctx.globalAlpha = 0.35 * base; ctx.strokeStyle = K.cream; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(x, y, b + 4.5, 0, 6.283); ctx.stroke();
-  } else if (look === 'moon') {
-    const a = t * 0.8 + p.phase;
-    ctx.globalAlpha = 0.9 * base; ctx.fillStyle = K.cream;
-    dot(x + Math.cos(a) * (b + 10), y + Math.sin(a) * (b + 10), 3.2);
+function drawComet() {
+  ctx.lineCap = 'round';
+  for (let i = 1; i < trail.length; i++) {
+    const a = i / trail.length, p0 = trail[i - 1], p1 = trail[i];
+    const x0 = (p0.x - camX) * zoom, y0 = (p0.y - camY) * zoom, x1 = (p1.x - camX) * zoom, y1 = (p1.y - camY) * zoom;
+    ctx.globalAlpha = a * 0.3; ctx.strokeStyle = K.b; ctx.lineWidth = (1 + a * 4) * Math.max(0.6, zoom);
+    ctx.beginPath(); ctx.moveTo(x0 - 2, y0 + 2 - 6); ctx.lineTo(x1 - 2, y1 + 2 - 6); ctx.stroke();
+    ctx.globalAlpha = a * (fever > 0 ? 0.9 : 0.62); ctx.strokeStyle = fever > 0 ? K.b : K.a; ctx.lineWidth = (0.8 + a * 4) * Math.max(0.6, zoom);
+    ctx.beginPath(); ctx.moveTo(x0, y0 - 6); ctx.lineTo(x1, y1 - 6); ctx.stroke();
   }
   ctx.globalAlpha = 1;
-}
-// Umlaufbahn als gestrichelter Bogen um die Sonne weit links
-function orbit(x, y, al) {
-  const R = 1400, span = H / R;
-  ctx.setLineDash([2, 7]); ctx.lineWidth = 1; ctx.strokeStyle = K.cream; ctx.globalAlpha = al;
-  ctx.beginPath(); ctx.arc(x - R, y, R, -span, span); ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1;
-}
-function drawPlanet(p) {
-  const sx = p.wx - dist, ext = p.b.size * 2.4 + 20;
-  if (sx < -ext || sx > W + ext) return;
-  const base = p.passed ? 0.55 : 1, body = p.b.size;
-  orbit(p.wx, p.y, p.passed ? 0.08 : 0.2);
-  const br = 1 + 0.35 * Math.sin(t * 0.9 + p.phase);
-  const ox = p.ox * br, oy = p.oy * br, crot = -t * p.cs;
-  const col = K[p.b.col], shCol = p.b.col === 'b' ? K.a : K.b;
-  if (p.b.look === 'ring' || p.b.look === 'tilt') ringHalf(p, false, base);
-  ctx.globalAlpha = 0.5 * base; ctx.fillStyle = shCol;
-  inkPath(p.wx - ox, p.y - oy, body, p.wc, crot); ctx.fill();
-  ctx.globalAlpha = 0.95 * base; ctx.fillStyle = col;
-  inkPath(p.wx, p.y, body, p.wc, crot); ctx.fill();
-  features(p, base);
-  ctx.globalAlpha = 0.3 * base; ctx.fillStyle = dotsP;
-  inkPath(p.wx, p.y, body, p.wc, crot); ctx.fill();
-  if (p.b.look === 'ring' || p.b.look === 'tilt') ringHalf(p, true, base);
+  const heavy = holding && state === 'play';
+  const r = 8 * Math.max(0.65, zoom) * (heavy ? 0.85 : 1) * (1 + 0.08 * Math.sin(t * 7));
+  const x = SHIP_SX(), y = SHIP_SY() - r * 0.8;
+  if (fever > 0) { ctx.globalAlpha = 0.3 + 0.2 * Math.sin(t * 20); ctx.fillStyle = K.b; dot(x, y, r * 2.2); }
+  ctx.globalAlpha = 0.5; ctx.fillStyle = K.b; dot(x - 2.5, y + 2.5, r * 1.05);
+  ctx.globalAlpha = 1; ctx.fillStyle = heavy ? K.cream : K.a; dot(x, y, r);
+  ctx.globalAlpha = 0.8; ctx.fillStyle = heavy ? K.a : K.cream; dot(x - r * 0.28, y - r * 0.3, r * 0.32);
   ctx.globalAlpha = 1;
-  const ly = p.y + body * (p.b.look === 'ring' ? 1.1 : 1) + 22;
-  txt(p.b.name, p.wx, ly, 14, K.cream, null, 0.9 * base, 0);
-  txt(p.b.label, p.wx, ly + 15, 10.5, K.b, null, 0.8 * base, 0);
+  if (y < 4) { ctx.fillStyle = K.a; ctx.beginPath(); ctx.moveTo(x, 6); ctx.lineTo(x - 7, 18); ctx.lineTo(x + 7, 18); ctx.fill(); }
 }
-function drawSun() {
-  const sx = sun.wx - dist;
-  if (sx < -260) return;
-  ctx.fillStyle = K.a;
-  for (const [k, a] of [[2.1, 0.05], [1.65, 0.08], [1.3, 0.12]]) {
-    ctx.globalAlpha = a * (0.85 + 0.15 * Math.sin(t * 1.4 + k));
-    inkPath(sun.wx, sun.y, 70 * k, sun.wr, t * 0.05 * k); ctx.fill();
-  }
-  ctx.globalAlpha = 0.5; ctx.fillStyle = K.b;
-  inkPath(sun.wx - sun.ox, sun.y - sun.oy, 70, sun.wc, -t * sun.cs); ctx.fill();
-  ctx.globalAlpha = 0.95; ctx.fillStyle = K.a;
-  inkPath(sun.wx, sun.y, 70, sun.wc, -t * sun.cs); ctx.fill();
-  ctx.globalAlpha = 0.3; ctx.fillStyle = dotsP;
-  inkPath(sun.wx, sun.y, 70, sun.wc, -t * sun.cs); ctx.fill();
-  ctx.globalAlpha = 1;
-  txt('Sonne', sun.wx + 30, sun.y + 96, 14, K.cream, null, 0.85, 0);
-}
-function drawCol(c) {
-  const sx = c.wx - dist;
-  if (sx < -COL_W * 2 || sx > W + COL_W * 2) return;
-  for (const r of c.rocks) {
-    const x = c.wx + r.dx, rot = r.rot + t * r.spin;
-    ctx.globalAlpha = 0.45; ctx.fillStyle = K.b;
-    inkPath(x - 2.5, r.y + 2.5, r.r, r.w, rot); ctx.fill();
-    ctx.globalAlpha = 1; ctx.fillStyle = K.deep;
-    inkPath(x, r.y, r.r, r.w, rot); ctx.fill();
-    ctx.globalAlpha = 0.35; ctx.strokeStyle = K.cream; ctx.lineWidth = 1.2; ctx.stroke();
-    ctx.globalAlpha = 0.3; ctx.fillStyle = dotsP; ctx.fill();
-  }
-  // Lueckenkanten in Akzentfarbe, damit man sie sofort sieht
-  ctx.globalAlpha = 0.8; ctx.fillStyle = K.a;
-  dot(c.wx - 9, c.gy - c.gap / 2 - 7, 2.2); dot(c.wx + 8, c.gy - c.gap / 2 - 10, 1.6);
-  dot(c.wx - 7, c.gy + c.gap / 2 + 9, 1.6); dot(c.wx + 9, c.gy + c.gap / 2 + 7, 2.2);
-  ctx.globalAlpha = 1;
-}
-function lapFade() {
-  if (lapT <= 0 || lapT >= 2.8 || !(state === 'lap' || state === 'play')) return 0;
-  if (lapT < 1.7) return 0;
-  if (lapT < 2.3) return (lapT - 1.7) / 0.6;
-  return 1 - (lapT - 2.3) / 0.5;
-}
-// Strecke Sonne → Neptun mit gestauchten echten Abstaenden
 function drawMap() {
-  const x0 = 34, x1 = W - 34, y = 22;
+  const x0 = 26, x1 = W - 26, y = 18;
   ctx.setLineDash([2, 5]); ctx.lineWidth = 1; ctx.strokeStyle = K.cream; ctx.globalAlpha = 0.35;
   ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); ctx.setLineDash([]);
-  ctx.globalAlpha = 0.9; ctx.fillStyle = K.a; dot(x0, y, 4);
+  ctx.globalAlpha = 0.9; ctx.fillStyle = K.a; dot(x0, y, 3.5);
   let cum = 0;
-  BODIES.forEach((b, i) => {
-    cum += b.cols;
-    const x = x0 + (x1 - x0) * cum / TOTAL;
-    ctx.globalAlpha = i < sec ? 0.95 : 0.45; ctx.fillStyle = i < sec ? K.b : K.cream;
-    dot(x, y, 1.6 + b.size / 22);
+  STAGES.forEach((s, i) => {
+    cum += s.hills;
+    const x = x0 + (x1 - x0) * cum / HILLS_TOTAL;
+    ctx.globalAlpha = i < stage ? 0.95 : 0.4; ctx.fillStyle = i < stage ? K.b : K.cream;
+    dot(x, y, i < 8 ? 1.6 : 2.4);
   });
-  const cx = x0 + (x1 - x0) * Math.min(1, lapPassed / TOTAL);
+  // Position: erledigte Huegel plus Fortschritt in der aktuellen Strecke
+  const s = STAGES[Math.min(stage, STAGES.length - 1)], e = ends[0];
+  const part = e ? clamp((c.x - stageStart) / (e.x - stageStart), 0, 1) * s.hills : 0;
+  const cx = x0 + (x1 - x0) * Math.min(1, (hillsDone + part) / HILLS_TOTAL);
   ctx.globalAlpha = 0.5; ctx.fillStyle = K.b; dot(cx - 1.5, y + 1.5, 3.4);
   ctx.globalAlpha = 1; ctx.fillStyle = K.a; dot(cx, y, 3.2);
-  const nxt = BODIES[Math.min(sec, BODIES.length - 1)];
-  ctx.textAlign = 'left';
-  txt('Sonne', x0 - 10, y + 16, 9.5, K.cream, null, 0.55, 0);
-  ctx.textAlign = 'right';
-  txt('Ziel: ' + nxt.name, x1 + 10, y + 16, 9.5, K.cream, null, 0.7, 0);
-  ctx.textAlign = 'center';
+}
+function drawLight() {
+  const w = 150, x = W / 2 - w / 2, y = 34, f = clamp(light / LIGHT_START, 0, 1.4) / 1.4;
+  ctx.globalAlpha = 0.35; ctx.strokeStyle = K.cream; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, 6);
+  ctx.globalAlpha = light < 6 && Math.sin(t * 10) > 0 ? 0.5 : 0.95; ctx.fillStyle = light < 6 ? K.cream : K.a;
+  ctx.fillRect(x, y, w * f, 6);
+  ctx.globalAlpha = 1;
+  txt('Licht ' + Math.ceil(light) + ' s', W / 2, y + 20, 10.5, K.cream, null, 0.7, 0);
 }
 
 function draw() {
@@ -488,15 +592,14 @@ function draw() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = K.paper; ctx.fillRect(0, 0, W, H);
   const M = W * 3;
-
-  ctx.fillStyle = K.deep; ctx.globalAlpha = 0.22;
-  for (const c of clouds) {
-    let x = ((c.x - dist * 0.08) % M + M) % M;
-    if (x > W + c.r) x -= M;
-    if (x + c.r > 0) { inkPath(x, c.y + Math.sin(t * 0.3 + c.r) * 6, c.r, c.w, t * c.sp); ctx.fill(); }
+  ctx.fillStyle = K.deep; ctx.globalAlpha = 0.2;
+  for (const cl of clouds) {
+    let x = ((cl.x - camX * 0.04) % M + M) % M;
+    if (x > W + cl.r) x -= M;
+    if (x + cl.r > 0) { inkPath(x, cl.y + Math.sin(t * 0.3 + cl.r) * 6, cl.r, cl.w, t * cl.sp); ctx.fill(); }
   }
   for (const s of specks) {
-    const x = ((s.x - dist * s.p) % M + M) % M;
+    const x = ((s.x - camX * s.p) % M + M) % M;
     if (x > W + 2) continue;
     ctx.globalAlpha = s.a * (0.65 + 0.35 * Math.sin(t * 1.6 + s.ph));
     ctx.fillStyle = s.pk ? K.a : K.cream;
@@ -504,47 +607,23 @@ function draw() {
   }
   ctx.globalAlpha = 1;
 
-  // Spielwelt
+  // Das naechste Ziel waechst am Himmel, je naeher der Komet kommt
+  const si = Math.min(stage, STAGES.length - 1), s = STAGES[si], e = ends[0];
+  const prog = e ? clamp((c.x - stageStart) / (e.x - stageStart), 0, 1) : 1;
+  const bx = W * 0.74 - prog * W * 0.2, by = H * 0.27 + Math.sin(t * 0.5) * 4, br = s.size * (0.45 + 0.75 * prog);
+  drawBody(s, bx, by, br, bodyVis);
+  const lb = by + br * (s.look === 'ring' ? 1.2 : s.look === 'cmb' ? 0.95 : 1.1) + 18;
+  txt(s.name, bx, lb, 12, K.cream, null, 0.75, 0);
+  txt(s.label, bx, lb + 13, 9.5, K.b, null, 0.7, 0);
+
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - 0.5) * 18 * shake, (Math.random() - 0.5) * 18 * shake);
-  ctx.translate(-dist, 0);
-  for (const d of belt) {
-    if (d.wx - dist < -10 || d.wx - dist > W + 140) continue;
-    if (d.label) { txt(d.label, d.wx, d.y, 11, K.cream, null, 0.45, 0); continue; }
-    ctx.globalAlpha = d.al * (0.7 + 0.3 * Math.sin(t * 1.3 + d.wx));
-    ctx.fillStyle = K.cream; dot(d.wx, d.y, d.s);
-  }
-  ctx.globalAlpha = 1;
-  drawSun();
-  for (const p of planets) drawPlanet(p);
-  for (const c of cols) drawCol(c);
-
-  ctx.lineCap = 'round';
-  for (let i = 1; i < trail.length; i++) {
-    const a = i / trail.length, p0 = trail[i - 1], p1 = trail[i];
-    ctx.globalAlpha = a * 0.3; ctx.strokeStyle = K.b; ctx.lineWidth = 1 + a * 3;
-    ctx.beginPath(); ctx.moveTo(p0.wx - 2, p0.y + 2); ctx.lineTo(p1.wx - 2, p1.y + 2); ctx.stroke();
-    ctx.globalAlpha = a * 0.62; ctx.strokeStyle = K.a; ctx.lineWidth = 0.8 + a * 3;
-    ctx.beginPath(); ctx.moveTo(p0.wx, p0.y); ctx.lineTo(p1.wx, p1.y); ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-  const ca = state === 'over' ? (cause === 'rock' ? 0 : Math.max(0, 1 - deadT * 1.4)) : 1;
-  if (ca > 0) {
-    const cx = dist + SHIP_X, cy = ship.y, pl = 1 + 0.08 * Math.sin(t * 7);
-    ctx.globalAlpha = 0.5 * ca; ctx.fillStyle = K.b; dot(cx - 2.5, cy + 2.5, 8 * pl);
-    ctx.globalAlpha = ca; ctx.fillStyle = K.a; dot(cx, cy, 7.5 * pl);
-    ctx.globalAlpha = 0.8 * ca; ctx.fillStyle = K.cream; dot(cx - 2, cy - 2.3, 2.4);
-    ctx.globalAlpha = 1;
-  }
+  drawTerrain();
+  drawComet();
   ctx.restore();
 
   for (const b of bits) { ctx.globalAlpha = Math.max(0, b.life) * 0.85; ctx.fillStyle = b.c; dot(b.x, b.y, b.r); }
   ctx.globalAlpha = 1;
-  for (const pp of pops) {
-    const a = Math.min(1, pp.life * 1.6);
-    txt(pp.a, pp.x, pp.y, 30, K.a, K.b, a, 0);
-    txt(pp.b, pp.x, pp.y + 20, 13, K.cream, null, a * 0.9, 0);
-  }
 
   if (flash > 0) {
     const pr = 1 - flash / 1.6, x = pr * (W + 260) - 130;
@@ -554,8 +633,13 @@ function draw() {
     ctx.globalAlpha *= 0.7; ctx.fillStyle = K.b; ctx.fillRect(-16, -110, 14, H + 220);
     ctx.restore(); ctx.globalAlpha = 1;
   }
-  const fade = lapFade();
-  if (fade > 0) { ctx.globalAlpha = fade; ctx.fillStyle = K.paper; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  // Dunkelheit kriecht von links heran, wenn das Licht ausgeht
+  const dark = state === 'night' || state === 'over' ? 0.6 : light < 8 && state === 'play' ? (1 - light / 8) * 0.5 : 0;
+  if (dark > 0) {
+    const g = ctx.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, 'rgba(0,0,0,' + dark + ')'); g.addColorStop(1, 'rgba(0,0,0,' + dark * 0.4 + ')');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
 
   ctx.save(); ctx.translate(-gx, -gy);
   ctx.globalAlpha = 0.5; ctx.fillStyle = grain; ctx.fillRect(0, 0, W + 12, H + 12);
@@ -566,34 +650,38 @@ function draw() {
   const title = state === 'ready' && showTitle;
   if (title) { ctx.globalAlpha = 0.5; ctx.fillStyle = K.paper; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   else {
-    drawMap();
-    txt(String(score), W / 2, 84, 40, K.cream, K.a, 1, Math.sin(t * 2.2) * 1.6);
-    txt('Runde ' + runde + ' · Level ' + params().level, W / 2, 106, 12, K.b, null, 0.85, 0);
+    drawMap(); drawLight();
+    txt(String(Math.floor(score)), W / 2, 94, 36, K.cream, K.a, 1, Math.sin(t * 2.2) * 1.6);
+    txt('Ziel: ' + s.name, W / 2, 114, 12, K.b, null, 0.85, 0);
   }
-  if (intro > 0 && state !== 'over') txt('Druckfarbe: ' + K.name, W / 2, 126, 12, K.a, null, Math.min(1, intro), 0);
-  if (flash > 0 && banner && state !== 'over') {
+  if (intro > 0 && state !== 'over') txt('Druckfarbe: ' + K.name, W / 2, 134, 12, K.a, null, Math.min(1, intro), 0);
+  if (flash > 0 && banner && (state === 'play' || state === 'night')) {
     const f = Math.min(1, flash);
-    txt(banner.a, W / 2, 150, 20 + (1 - f) * 5, K.a, null, f, 0);
-    txt(banner.b, W / 2, 170, 12, K.cream, null, f * 0.9, 0);
+    txt(banner.a, W / 2, 162, 20 + (1 - f) * 5, K.a, null, f, 0);
+    txt(banner.b, W / 2, 181, 11, K.cream, null, f * 0.9, 0);
+    txt(banner.c, W / 2, 198, 12, K.b, null, f, 0);
   }
-  if (state === 'lap' && lapT < 2.3) {
-    const a = Math.min(1, lapT * 3) * (lapT > 1.9 ? Math.max(0, (2.3 - lapT) / 0.4) : 1);
-    txt('Sonnensystem durchquert', W / 2, H * 0.3, 22, K.cream, K.a, a, 0);
-    txt('weiter in Runde ' + (runde + 1), W / 2, H * 0.3 + 26, 14, K.b, null, a, 0);
+  for (const pp of pops) {
+    const a = Math.min(1, pp.life * 2);
+    txt(pp.a, pp.x, pp.y, 22, pp.col, K.paper, a, 0);
+    if (pp.b) txt(pp.b, pp.x, pp.y + 18, 11, K.cream, null, a * 0.85, 0);
   }
   if (state === 'ready') {
     if (title) {
-      const y0 = H * 0.17, bob = Math.sin(t * 1.3) * 3;
+      const y0 = H * 0.15, bob = Math.sin(t * 1.3) * 3;
       txt('Trabant', W / 2, y0 + bob, 46, K.cream, K.b, 1, Math.sin(t * 0.8) * 2.4);
       txt('Druckfarbe: ' + K.name, W / 2, y0 + 24 + bob, 12, K.a, null, 0.85, 0);
-      txt('Von der Sonne bis zum Neptun', W / 2, y0 + 56, 15, K.cream, null, 0.95, 0);
-      txt('Tippen gibt dem Kometen Schub', W / 2, H * 0.66, 14, K.cream, null, 0.85, 0);
-      txt('Flieg durch die Lücken im Gestein', W / 2, H * 0.66 + 20, 14, K.cream, null, 0.85, 0);
-      txt('Jeder Planet ist ein Level', W / 2, H * 0.66 + 40, 14, K.cream, null, 0.85, 0);
-      txt('Tippen zum Starten', W / 2, H * 0.66 + 76, 15, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
-      if (best > 0) txt('Bestwert ' + best, W / 2, H * 0.66 + 100, 13, K.b, null, 0.85, 0);
+      txt('Von der Sonne bis zum Rand des Universums', W / 2, y0 + 54, 14, K.cream, null, 0.95, 0);
+      const y1 = H * 0.42;
+      txt('Halten: Der Komet wird schwer', W / 2, y1, 14, K.cream, null, 0.85, 0);
+      txt('und saust die Hügel hinab', W / 2, y1 + 18, 14, K.cream, null, 0.85, 0);
+      txt('Loslassen vor der Kuppe: Er hebt ab', W / 2, y1 + 42, 14, K.cream, null, 0.85, 0);
+      txt('Flach auf dem Abhang landen = Perfekt', W / 2, y1 + 66, 14, K.cream, null, 0.85, 0);
+      txt('Erreiche das nächste Ziel, bevor das Licht ausgeht', W / 2, y1 + 90, 12, K.b, null, 0.85, 0);
+      txt('Halten zum Starten', W / 2, y1 + 124, 15, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
+      if (best > 0) txt('Bestwert ' + best, W / 2, y1 + 146, 13, K.b, null, 0.85, 0);
     } else {
-      txt('Tippen zum Starten', W / 2, H * 0.66, 16, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
+      txt('Halten zum Starten', W / 2, H * 0.45, 16, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
     }
   }
   if (state === 'paused') {
@@ -601,14 +689,15 @@ function draw() {
     txt('Pause', W / 2, H / 2 - 8, 20, K.cream, null, 1, 0);
     txt('Tippen zum Weiterfliegen', W / 2, H / 2 + 20, 14, K.a, null, 1, 0);
   }
-  if (state === 'over' && deadT > 0.3) {
-    const y = H / 2 - 80;
-    panel(46, y, 268, 160);
-    txt(cause === 'rock' ? 'Am Gestein zerschellt' : 'Aus der Bahn geraten', W / 2, y + 38, 22, K.cream, null, 1, 0);
-    const wo = sec === 0 ? 'Noch an der Sonne' : 'Erreicht: ' + BODIES[sec - 1].name;
-    txt(runde > 1 ? wo + ' in Runde ' + runde : wo, W / 2, y + 66, 14, K.cream, null, 0.85, 0);
-    txt('Punkte ' + score + '   Bestwert ' + best, W / 2, y + 90, 14, K.b, null, 0.9, 0);
-    if (deadT > 0.6) txt('Tippen für neue Farben', W / 2, y + 130, 15, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
+  if ((state === 'over' || state === 'win') && deadT > 0.4) {
+    const y = H / 2 - 90, win = state === 'win';
+    panel(30, y, 300, 180);
+    txt(win ? 'Universum durchquert' : 'Das Licht ist erloschen', W / 2, y + 38, 22, K.cream, null, 1, 0);
+    const wo = win ? 'Rand des beobachtbaren Universums' : stage === 0 ? 'Noch nahe der Sonne' : 'Erreicht: ' + STAGES[stage - 1].name;
+    txt(wo, W / 2, y + 64, 13, K.cream, null, 0.85, 0);
+    if (!win && stage > 0) txt(STAGES[stage - 1].label, W / 2, y + 82, 11, K.b, null, 0.8, 0);
+    txt('Punkte ' + Math.floor(score) + '   Bestwert ' + best, W / 2, y + 108, 14, K.b, null, 0.9, 0);
+    if (deadT > 0.8) txt('Tippen für neue Farben', W / 2, y + 150, 15, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
   }
 }
 
@@ -626,12 +715,16 @@ grain = makeGrain();
 reset();
 
 document.addEventListener('pointerdown', e => { e.preventDefault(); press(); });
+document.addEventListener('pointerup', e => { e.preventDefault(); release(); });
+document.addEventListener('pointercancel', release);
 ['touchstart', 'touchmove', 'touchend'].forEach(n => document.addEventListener(n, e => e.preventDefault(), { passive: false }));
 document.addEventListener('contextmenu', e => e.preventDefault());
+const isKey = e => e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowDown';
 addEventListener('keydown', e => {
-  if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowUp') { e.preventDefault(); if (!e.repeat) press(); }
+  if (isKey(e)) { e.preventDefault(); if (!e.repeat) press(); }
   if (e.code === 'KeyP') pause();
 });
+addEventListener('keyup', e => { if (isKey(e)) { e.preventDefault(); release(); } });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 addEventListener('resize', fit);
 addEventListener('orientationchange', () => setTimeout(fit, 120));
