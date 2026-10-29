@@ -214,7 +214,7 @@ function startLap() {
   cols = []; planets = []; belt = [];
   genSec = 0; colsLeft = BODIES[0].cols; sec = 0; lapPassed = 0;
   lastGy = H / 2;
-  sun = visuals({ wx: dist - 15, y: H * 0.5 });
+  sun = visuals({ wx: dist + 5, y: H * 0.5 });
   cursor = dist + W + 60;
 }
 function reset() {
@@ -433,7 +433,7 @@ function drawSun() {
   ctx.globalAlpha = 0.3; ctx.fillStyle = dotsP;
   inkPath(sun.wx, sun.y, 70, sun.wc, -t * sun.cs); ctx.fill();
   ctx.globalAlpha = 1;
-  txt('Sonne', sun.wx + 40, sun.y + 96, 14, K.cream, null, 0.85, 0);
+  txt('Sonne', sun.wx + 30, sun.y + 96, 14, K.cream, null, 0.85, 0);
 }
 function drawCol(c) {
   const sx = c.wx - dist;
