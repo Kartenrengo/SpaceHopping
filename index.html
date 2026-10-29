@@ -1,292 +1,640 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#05060f">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0E1830">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Space Hopping</title>
+<title>Trabant</title>
 <style>
-  :root { --bg: #05060f; }
+  :root { color-scheme: dark; }
+  * { margin:0; padding:0; box-sizing:border-box; }
   html, body {
-    margin: 0; height: 100%; background: var(--bg); overflow: hidden;
-    touch-action: none; overscroll-behavior: none;
-    -webkit-user-select: none; user-select: none;
-    -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+    height:100%; width:100%;
+    background:#0E1830;
+    overflow:hidden; overscroll-behavior:none;
+    position:fixed; inset:0;
+    touch-action:none;
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    -webkit-touch-callout:none;
+    transition: background 600ms ease;
   }
-  body { display: flex; align-items: center; justify-content: center; }
-  canvas { display: block; }
+  #wrap { height:100dvh; width:100vw; display:flex; align-items:center; justify-content:center; }
+  canvas { display:block; touch-action:none; }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<div id="wrap"><canvas id="tz" aria-label="Trabant – von der Sonne bis zum Neptun. Tippen gibt dem Kometen Schub"></canvas></div>
 <script>
 "use strict";
 // ---------- Stellschrauben ----------
-const W = 360; let H = 640;          // logische Spielfläche; Höhe passt sich dem Handy an
-const GRAVITY = 1500;                // px/s²
-const FLAP = -430;                   // Sprunggeschwindigkeit beim Tippen
-const MAX_FALL = 620;
-const SHIP_X = 95, SHIP_R = 13;
-const PIPE_W = 64;
-const POINTS_PER_LEVEL = 5;
-const MAX_SHIFT = 170;               // max. Höhensprung zwischen zwei Lücken
-// Level 1 → Endstufe (wie beim Vogelspiel)
-const SPEED = [140, 265], GAP = [178, 112], SPACING = [235, 160];
-const LEVELS_TO_MAX = 8;             // ab Level 9 bleibt es auf Maximum
-// Jede Stufe ist ein Abschnitt des Sonnensystems
-const STAGES = [
-  { name: "Merkur",  color: "#a9a39b", ring: false },
-  { name: "Venus",   color: "#e3c27a", ring: false },
-  { name: "Erde",    color: "#3b7fd6", ring: false },
-  { name: "Mars",    color: "#c4532e", ring: false },
-  { name: "Jupiter", color: "#c99a6b", ring: false },
-  { name: "Saturn",  color: "#dcc58e", ring: true  },
-  { name: "Uranus",  color: "#8fd3dc", ring: false },
-  { name: "Neptun",  color: "#3d5bd8", ring: false },
-  { name: "Kuipergürtel", color: "#7d6f8c", ring: false },
+const W = 360; let H = 640;                 // Spielwelt; Höhe passt sich dem Handy an
+const GRAVITY = 1500, FLAP = -430, MAX_FALL = 620;
+const SHIP_X = 100, SHIP_R = 8;             // Komet: Position und Trefferradius
+const COL_W = 58;                            // Breite eines Gesteinsfeldes
+const MAX_SHIFT = 170;                       // max. Höhensprung zwischen zwei Lücken
+// Jeder Planet ist ein Level. Level 1 → Endstufe (wie beim Vogelspiel), danach bleibt es auf Maximum
+const SPEED = [140, 265], GAP = [178, 112], SPACING = [235, 160], LEVELS_TO_MAX = 10;
+const F = 'Georgia, serif';
+
+const SETS = [
+  { name: 'Mitternacht', paper: '#0E1830', deep: '#2B4785', a: '#FF4F79', b: '#6FE3C0', cream: '#EFE7D6' },
+  { name: 'Tiefsee',     paper: '#06201E', deep: '#0F4A44', a: '#FF7A5C', b: '#7FE9D0', cream: '#E9F1E4' },
+  { name: 'Traube',      paper: '#1A0E2A', deep: '#46237A', a: '#FFD166', b: '#EF476F', cream: '#F2E9F7' },
+  { name: 'Rost',        paper: '#221208', deep: '#5A2A18', a: '#FF9A3C', b: '#6BC5B8', cream: '#F3E6D6' },
+  { name: 'Moor',        paper: '#0B1A14', deep: '#1E4634', a: '#F2545B', b: '#C6F24E', cream: '#EDF2E4' },
+  { name: 'Kobalt',      paper: '#0A1230', deep: '#1E3AA8', a: '#FF5CAA', b: '#FFE066', cream: '#E8ECFF' },
+  { name: 'Asche',       paper: '#14131A', deep: '#3A3750', a: '#E0FF4F', b: '#FF6B6B', cream: '#EDEBE4' }
 ];
 
-// ---------- Canvas & Skalierung ----------
-const cv = document.getElementById("c"), ctx = cv.getContext("2d");
-let scale = 1;
-function resize() {
+// Echte Werte aus dem NASA Planetary Fact Sheet: Abstand zur Sonne in Mio. km, Durchmesser in km
+const BODIES = [
+  { name: 'Merkur',  dist: 57.9,   diam: 4879,   look: 'rock',  col: 'cream' },
+  { name: 'Venus',   dist: 108.2,  diam: 12104,  look: 'veil',  col: 'a' },
+  { name: 'Erde',    dist: 149.6,  diam: 12756,  look: 'moon',  col: 'b' },
+  { name: 'Mars',    dist: 228.0,  diam: 6792,   look: 'rock',  col: 'a' },
+  { name: 'Jupiter', dist: 778.5,  diam: 142984, look: 'bands', col: 'cream' },
+  { name: 'Saturn',  dist: 1432.0, diam: 120536, look: 'ring',  col: 'a' },
+  { name: 'Uranus',  dist: 2867.0, diam: 51118,  look: 'tilt',  col: 'b' },
+  { name: 'Neptun',  dist: 4515.0, diam: 49528,  look: 'spot',  col: 'b' }
+];
+// Massstab: Die Strecke bis zum naechsten Planeten ist eine Anzahl Gesteinsfelder.
+// Echte Luecke in AE hoch 0,3: innen kurz (3–4 Felder), aussen lang (10 Felder) – aus 40:1 wird 3:1.
+const AU = 149.6, COLS_K = 4.9, GAP_P = 0.3;
+{
+  let last = 0;
+  for (const b of BODIES) {
+    b.cols = Math.max(3, Math.round(COLS_K * Math.pow((b.dist - last) / AU, GAP_P)));
+    last = b.dist;
+    b.size = 2.2 * (6.5 + 5.5 * Math.log(b.diam / 4879));   // Groesse, logarithmisch
+    b.label = b.dist < 1000 ? Math.round(b.dist) + ' Mio. km'
+      : (Math.round(b.dist / 10) / 100).toFixed(2).replace('.', ',') + ' Mrd. km';
+  }
+}
+const TOTAL = BODIES.reduce((s, b) => s + b.cols, 0);
+
+// ---------- Leinwand ----------
+const cv = document.getElementById('tz'), ctx = cv.getContext('2d');
+const meta = document.querySelector('meta[name=theme-color]');
+let scale = 1, dpr = 1, grain, vign, dotsP;
+function fit() {
   const vw = window.innerWidth, vh = window.innerHeight;
   H = Math.round(Math.min(820, Math.max(560, W * vh / vw)));
   scale = Math.min(vw / W, vh / H);
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  cv.style.width = W * scale + "px";
-  cv.style.height = H * scale + "px";
-  cv.width = Math.round(W * scale * dpr);
-  cv.height = Math.round(H * scale * dpr);
-  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px';
+  cv.width = Math.round(W * scale * dpr); cv.height = Math.round(H * scale * dpr);
+  vign = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.78);
+  vign.addColorStop(0, 'rgba(6,8,18,0)');
+  vign.addColorStop(1, 'rgba(6,8,18,0.55)');
 }
-window.addEventListener("resize", resize);
-resize();
 
-// ---------- Speicher ----------
-let best = 0;
-try { best = +localStorage.getItem("spacehop.best") || 0; } catch (e) {}
-function saveBest() { try { localStorage.setItem("spacehop.best", best); } catch (e) {} }
-function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
-
-// ---------- Hintergrund ----------
+// ---------- Druck-Helfer ----------
 const rnd = (a, b) => a + Math.random() * (b - a);
-const stars = [];
-for (let i = 0; i < 90; i++) stars.push({ x: rnd(0, W), y: rnd(0, H), z: rnd(0.15, 1) });
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function makeGrain() {
+  const c = document.createElement('canvas'); c.width = c.height = 110;
+  const g = c.getContext('2d'), d = g.createImageData(110, 110);
+  for (let i = 0; i < d.data.length; i += 4) {
+    const v = Math.random() * 255;
+    d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
+    d.data[i + 3] = Math.random() < 0.42 ? 42 : 0;
+  }
+  g.putImageData(d, 0, 0);
+  return ctx.createPattern(c, 'repeat');
+}
+function makeDots(col) {
+  const c = document.createElement('canvas'); c.width = c.height = 4;
+  const g = c.getContext('2d');
+  g.fillStyle = col; g.beginPath(); g.arc(2, 2, 0.95, 0, 6.283); g.fill();
+  return ctx.createPattern(c, 'repeat');
+}
+function wob(n, amp) {
+  const a = [], p1 = Math.random() * 6.3, p2 = Math.random() * 6.3;
+  const f1 = 2 + Math.floor(Math.random() * 2), f2 = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) {
+    const u = i / n * 6.283;
+    a.push((Math.sin(u * f1 + p1) * 0.62 + Math.sin(u * f2 + p2) * 0.38) * amp);
+  }
+  return a;
+}
+function inkPath(cx, cy, r, w, rot) {
+  const n = w.length;
+  ctx.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const u = i / n * 6.283 + rot, rr = r * (1 + w[i % n]);
+    const x = cx + Math.cos(u) * rr, y = cy + Math.sin(u) * rr;
+    if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+}
+function dot(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill(); }
+function txt(s, x, y, size, col, sh, al, j) {
+  ctx.font = '400 ' + size.toFixed(1) + 'px ' + F;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(3, size * 0.16);
+  ctx.globalAlpha = al * 0.7; ctx.strokeStyle = K.paper; ctx.strokeText(s, x, y);
+  if (sh) { ctx.globalAlpha = al * 0.6; ctx.fillStyle = sh; ctx.fillText(s, x - 2.5 + j, y + 2.5); }
+  ctx.globalAlpha = al; ctx.fillStyle = col; ctx.fillText(s, x, y);
+  ctx.globalAlpha = 1;
+}
+function panel(x, y, w, h) {
+  const j = Math.sin(t * 1.6) * 1.2;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.5; ctx.strokeStyle = K.b; ctx.strokeRect(x - 2.5 + j, y + 2.5, w, h);
+  ctx.globalAlpha = 0.92; ctx.fillStyle = K.paper; ctx.fillRect(x, y, w, h);
+  ctx.globalAlpha = 0.75; ctx.strokeStyle = K.cream; ctx.strokeRect(x, y, w, h);
+  ctx.globalAlpha = 1;
+}
+function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {} }
 
 // ---------- Zustand ----------
-let state = "ready";   // ready | play | dead | pause
-let ship, pipes, score, level, distToNext, t, deadT, flashT, levelBanner, particles;
+let K = SETS[0], pal = -1, best = 0, showTitle = true;
+try { best = +localStorage.getItem('trabant.flug.best') || 0; } catch (_) {}
+let state = 'ready', prev = 'play', cause = '';
+let ship, dist, cursor, cols, planets, belt, sun, bits, trail, pops, specks, clouds;
+let genSec, colsLeft, lastGy, sec, runde, score, lapPassed;
+let t = 0, deadT = 0, flash = 0, shake = 0, lapT = 0, lapBuilt = false, intro = 0, banner = null, gx = 0, gy = 0;
 
-function lerp(a, b, k) { return a + (b - a) * k; }
 function params() {
-  const k = Math.min(1, (level - 1) / LEVELS_TO_MAX);
-  return { speed: lerp(SPEED[0], SPEED[1], k), gap: lerp(GAP[0], GAP[1], k), spacing: lerp(SPACING[0], SPACING[1], k) };
-}
-function stage() { return STAGES[Math.min(level - 1, STAGES.length - 1)]; }
-
-function makeRocks(h) {   // Asteroidenbrocken für eine Säulenhälfte
-  const rocks = [];
-  for (let y = 0; y < h + 20; y += rnd(18, 26))
-    rocks.push({ dx: rnd(-6, 6), y, r: rnd(15, 22), shade: rnd(0.75, 1.1) });
-  return rocks;
-}
-function addPipe(x) {
-  const p = params(), margin = 70;
-  const lo = margin + p.gap / 2, hi = H - margin - p.gap / 2;
-  const prev = pipes.length ? pipes[pipes.length - 1].gy : H / 2;
-  // Höhenunterschied zur vorigen Lücke begrenzen, damit jeder Wechsel schaffbar bleibt
-  const gy = Math.max(lo, Math.min(hi, prev + rnd(-MAX_SHIFT, MAX_SHIFT)));
-  pipes.push({ x, gy, gap: p.gap, passed: false, top: makeRocks(gy - p.gap / 2), bot: makeRocks(H - (gy + p.gap / 2)) });
+  const level = (runde - 1) * BODIES.length + sec + 1, k = Math.min(1, (level - 1) / LEVELS_TO_MAX);
+  return {
+    level,
+    speed: SPEED[0] + (SPEED[1] - SPEED[0]) * k,
+    gap: GAP[0] + (GAP[1] - GAP[0]) * k,
+    spacing: SPACING[0] + (SPACING[1] - SPACING[0]) * k
+  };
 }
 
+// Ein Gesteinsfeld: Brocken oben und unten, dazwischen die Luecke
+function makeCol(wx) {
+  const p = params(), lo = 70 + p.gap / 2, hi = H - 70 - p.gap / 2;
+  const gy = clamp(lastGy + rnd(-MAX_SHIFT, MAX_SHIFT), lo, hi);
+  lastGy = gy;
+  const top = gy - p.gap / 2, bot = gy + p.gap / 2, rocks = [];
+  const rock = (y, r) => ({ dx: rnd(-5, 5), y, r, w: wob(26, 0.07), rot: rnd(0, 6.3), spin: rnd(-0.4, 0.4) });
+  // Der Brocken am Lueckenrand sitzt genau auf der Kante, der Rest stapelt sich bis zum Rand
+  let r = COL_W / 2 * rnd(0.85, 1), y = top - r;
+  while (y > -r) { rocks.push(rock(y, r)); r = COL_W / 2 * rnd(0.75, 1); y -= r * rnd(0.95, 1.2); }
+  r = COL_W / 2 * rnd(0.85, 1); y = bot + r;
+  while (y < H + r) { rocks.push(rock(y, r)); r = COL_W / 2 * rnd(0.75, 1); y += r * rnd(0.95, 1.2); }
+  return { wx, gy, gap: p.gap, rocks, passed: false };
+}
+
+function visuals(p) {
+  p.wr = wob(40, 0.028); p.wc = wob(34, 0.05);
+  p.ox = rnd(-2.6, 2.6); p.oy = rnd(-2.6, 2.6);
+  p.rs = rnd(-0.22, 0.22); p.cs = rnd(-0.4, 0.4);
+  p.phase = rnd(0, 6.283);
+  return p;
+}
+
+// Legt Felder und Planeten vor dem Kometen aus, solange etwas ins Bild kommt
+function generate() {
+  while (cursor < dist + W + 140 && genSec < BODIES.length) {
+    const p = params();
+    if (colsLeft > 0) { cols.push(makeCol(cursor)); colsLeft--; cursor += p.spacing; continue; }
+    const b = BODIES[genSec], pad = b.size * (b.look === 'ring' ? 2.3 : 1) + 80;
+    const pl = visuals({ b, idx: genSec, wx: cursor - p.spacing + COL_W / 2 + pad, y: rnd(0.32, 0.68) * H, passed: false });
+    planets.push(pl);
+    cursor = pl.wx + pad + COL_W / 2;
+    if (b.name === 'Mars') {
+      // Asteroidenguertel zwischen Mars und Jupiter
+      const len = BODIES[genSec + 1].cols * p.spacing;
+      for (let i = 0; i < 150; i++) belt.push({ wx: cursor + rnd(0, len), y: rnd(0, H), s: rnd(0.5, 1.7), al: rnd(0.18, 0.5) });
+      belt.push({ wx: cursor + len / 2, y: H - 30, label: 'Asteroidengürtel' });
+    }
+    genSec++;
+    colsLeft = genSec < BODIES.length ? BODIES[genSec].cols : 0;
+  }
+}
+
+function startLap() {
+  cols = []; planets = []; belt = [];
+  genSec = 0; colsLeft = BODIES[0].cols; sec = 0; lapPassed = 0;
+  lastGy = H / 2;
+  sun = visuals({ wx: dist - 15, y: H * 0.5 });
+  cursor = dist + W + 60;
+}
 function reset() {
-  ship = { y: H * 0.45, vy: 0, rot: 0 };
-  pipes = []; particles = [];
-  score = 0; level = 1; t = 0; deadT = 0; flashT = 0;
-  levelBanner = 2.2;
-  distToNext = 0;
-  addPipe(W + 60);
+  let n = Math.floor(Math.random() * SETS.length);
+  if (n === pal) n = (n + 1) % SETS.length;
+  pal = n; K = SETS[n];
+  dotsP = makeDots(K.paper);
+  document.body.style.background = K.paper;
+  if (meta) meta.setAttribute('content', K.paper);
+  ship = { y: H * 0.45, vy: 0 };
+  dist = 0; score = 0; runde = 1; deadT = 0; flash = 0; shake = 0; cause = ''; banner = null; lapT = 0;
+  bits = []; trail = []; pops = [];
+  startLap();
+  state = 'ready';
+  intro = showTitle ? 0 : 2.4;
+  specks = [];
+  for (let i = 0; i < 90; i++) specks.push({ x: rnd(0, W * 3), y: rnd(0, H), s: rnd(0.5, 1.9), p: rnd(0.06, 0.26), a: rnd(0.2, 0.7), ph: rnd(0, 6.3), pk: Math.random() < 0.15 });
+  clouds = [];
+  for (let i = 0; i < 4; i++) clouds.push({ x: rnd(0, W * 3), y: rnd(60, H - 60), r: rnd(70, 170), w: wob(30, 0.12), sp: rnd(-0.06, 0.06) });
 }
-reset();
+
+function burst(x, y, n, sp) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, v = sp * (0.35 + Math.random());
+    bits.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, r: rnd(0.8, 2.7), c: Math.random() < 0.5 ? K.a : K.b });
+  }
+}
+function flap() {
+  ship.vy = FLAP;
+  for (let i = 0; i < 4; i++)
+    bits.push({ x: SHIP_X - 6, y: ship.y + rnd(-3, 3), vx: rnd(-150, -60), vy: rnd(20, 90), life: 0.7, r: rnd(0.8, 1.8), c: Math.random() < 0.5 ? K.a : K.cream });
+}
+function arrive(p) {
+  const b = p.b;
+  sec = p.idx + 1;
+  flash = 1.6;
+  if (p.idx === BODIES.length - 1) {
+    score += 5;
+    pops.push({ x: W / 2, y: H * 0.42, a: '+5', b: 'Neptun erreicht', life: 2.2 });
+    state = 'lap'; lapT = 0; lapBuilt = false; banner = null;
+    buzz(40);
+    return;
+  }
+  banner = { a: b.name + ' erreicht', b: b.label + ' von der Sonne · Level ' + params().level };
+  buzz([25, 40, 25]);
+}
+function die(c) {
+  cause = c; state = 'over'; deadT = 0;
+  burst(SHIP_X, ship.y, 22, 140);
+  shake = c === 'rock' ? 0.32 : 0.18;
+  buzz(c === 'rock' ? 60 : 35);
+  if (score > best) { best = score; try { localStorage.setItem('trabant.flug.best', String(best)); } catch (_) {} }
+}
 
 // ---------- Eingabe ----------
 let wantFull = true;
 function goFullscreen() {
   if (!wantFull) return; wantFull = false;
-  const el = document.documentElement;
-  const rf = el.requestFullscreen || el.webkitRequestFullscreen;
+  const el = document.documentElement, rf = el.requestFullscreen || el.webkitRequestFullscreen;
   if (rf) Promise.resolve(rf.call(el)).then(() => {
-    try { screen.orientation.lock("portrait").catch(() => {}); } catch (e) {}
+    try { screen.orientation.lock('portrait').catch(() => {}); } catch (_) {}
   }).catch(() => {});
 }
 function press() {
   goFullscreen();
-  if (state === "ready") { state = "play"; flap(); }
-  else if (state === "play") flap();
-  else if (state === "pause") state = "play";
-  else if (state === "dead" && deadT > 0.6) { reset(); state = "ready"; }
+  if (state === 'ready') { state = 'play'; showTitle = false; flap(); }
+  else if (state === 'play') flap();
+  else if (state === 'paused') state = prev;
+  else if (state === 'over' && deadT > 0.6) reset();
 }
-function flap() {
-  ship.vy = FLAP;
-  for (let i = 0; i < 5; i++)
-    particles.push({ x: SHIP_X - 14, y: ship.y + rnd(-4, 4), vx: rnd(-160, -60), vy: rnd(-30, 60), life: rnd(0.25, 0.5), c: "#ffb347" });
-}
-window.addEventListener("pointerdown", e => { e.preventDefault(); press(); }, { passive: false });
-window.addEventListener("keydown", e => {
-  if (e.code === "Space" || e.code === "ArrowUp" || e.code === "Enter") { e.preventDefault(); if (!e.repeat) press(); }
-  if (e.code === "KeyP" && state === "play") state = "pause";
-});
-window.addEventListener("contextmenu", e => e.preventDefault());
-document.addEventListener("visibilitychange", () => { if (document.hidden && state === "play") state = "pause"; });
+function pause() { if (state === 'play' || state === 'lap') { prev = state; state = 'paused'; } }
 
 // ---------- Logik ----------
-function die() {
-  state = "dead"; deadT = 0; flashT = 0.25;
-  buzz(120);
-  if (score > best) { best = score; saveBest(); }
-  for (let i = 0; i < 28; i++) {
-    const a = rnd(0, Math.PI * 2), v = rnd(60, 260);
-    particles.push({ x: SHIP_X, y: ship.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rnd(0.4, 0.9), c: i % 2 ? "#ff6a3d" : "#ffe08a" });
-  }
-}
-function hit(p) {
-  if (SHIP_X + SHIP_R < p.x || SHIP_X - SHIP_R > p.x + PIPE_W) return false;
-  // nächster Punkt des Rechtecks zum Kreis
-  const cx = Math.max(p.x, Math.min(SHIP_X, p.x + PIPE_W));
-  const topB = p.gy - p.gap / 2, botB = p.gy + p.gap / 2;
-  if (ship.y - SHIP_R < topB) { const cy = Math.min(ship.y, topB); if (Math.hypot(SHIP_X - cx, ship.y - cy) < SHIP_R) return true; }
-  if (ship.y + SHIP_R > botB) { const cy = Math.max(ship.y, botB); if (Math.hypot(SHIP_X - cx, ship.y - cy) < SHIP_R) return true; }
-  return false;
-}
-
 function update(dt) {
+  if (Math.random() < 0.3) { gx = (Math.random() * 9) | 0; gy = (Math.random() * 9) | 0; }
+  if (state === 'paused') return;
   t += dt;
+  if (flash > 0) flash -= dt;
+  if (shake > 0) shake -= dt;
+  if (intro > 0) intro -= dt;
+  for (let i = bits.length - 1; i >= 0; i--) {
+    const b = bits[i];
+    b.x += b.vx * dt; b.y += b.vy * dt; b.vy += 70 * dt; b.vx *= 0.985; b.life -= dt * 1.05;
+    if (b.life <= 0) bits.splice(i, 1);
+  }
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const pp = pops[i]; pp.life -= dt; pp.y -= 22 * dt;
+    if (pp.life <= 0) pops.splice(i, 1);
+  }
+
   const p = params();
-  for (const s of stars) { s.x -= s.z * (state === "play" ? p.speed : 40) * 0.25 * dt; if (s.x < 0) { s.x += W; s.y = rnd(0, H); } }
-  for (const q of particles) { q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; }
-  particles = particles.filter(q => q.life > 0);
-  if (flashT > 0) flashT -= dt;
-  if (levelBanner > 0) levelBanner -= dt;
-
-  if (state === "ready") { ship.y = H * 0.45 + Math.sin(t * 3) * 8; ship.rot = 0; return; }
-  if (state === "pause") return;
-  if (state === "dead") {
-    deadT += dt;
-    if (ship.y < H + 40) { ship.vy = Math.min(ship.vy + GRAVITY * dt, MAX_FALL); ship.y += ship.vy * dt; ship.rot += 6 * dt; }
-    return;
-  }
-
-  ship.vy = Math.min(ship.vy + GRAVITY * dt, MAX_FALL);
-  ship.y += ship.vy * dt;
-  ship.rot = Math.max(-0.5, Math.min(1.2, ship.vy / 550));
-  if (Math.random() < 0.6) particles.push({ x: SHIP_X - 14, y: ship.y + rnd(-2, 2), vx: rnd(-120, -60), vy: rnd(-15, 15), life: 0.25, c: "#7fd8ff" });
-
-  for (const q of pipes) {
-    q.x -= p.speed * dt;
-    if (!q.passed && q.x + PIPE_W < SHIP_X - SHIP_R) {
-      q.passed = true; score++;
-      if (score % POINTS_PER_LEVEL === 0) { level++; levelBanner = 2.2; buzz([40, 60, 40]); }
+  if (state === 'ready') {
+    ship.y = H * 0.45 + Math.sin(t * 3) * 8; ship.vy = 0;
+  } else if (state === 'play') {
+    if (lapT > 0 && lapT < 2.8) lapT += dt;
+    dist += p.speed * dt;
+    generate();
+    ship.vy = Math.min(ship.vy + GRAVITY * dt, MAX_FALL);
+    ship.y += ship.vy * dt;
+    const sx = dist + SHIP_X;
+    for (const c of cols) {
+      if (!c.passed && c.wx + COL_W / 2 < sx - SHIP_R) { c.passed = true; score++; lapPassed++; }
     }
+    for (const pl of planets) if (!pl.passed && pl.wx < sx) { pl.passed = true; arrive(pl); }
+    if (state === 'play') {
+      if (ship.y - SHIP_R < 0 || ship.y + SHIP_R > H) die('void');
+      else for (const c of cols) {
+        if (Math.abs(c.wx - sx) > COL_W) continue;
+        for (const r of c.rocks)
+          if (Math.hypot(c.wx + r.dx - sx, r.y - ship.y) < r.r * 0.92 + SHIP_R) { die('rock'); break; }
+        if (state !== 'play') break;
+      }
+    }
+  } else if (state === 'lap') {
+    // Neptun erreicht: Komet gleitet, ausblenden, neue Runde ab der Sonne
+    lapT += dt;
+    dist += p.speed * dt;
+    ship.vy = 0; ship.y += (H * 0.45 - ship.y) * Math.min(1, dt * 2);
+    if (lapT >= 2.3 && !lapBuilt) { lapBuilt = true; runde++; startLap(); flash = 1.6; banner = { a: 'Runde ' + runde + ' · schneller', b: 'wieder ab der Sonne' }; }
+    if (lapT >= 2.5) { state = 'play'; ship.vy = FLAP * 0.6; }
+  } else if (state === 'over') {
+    deadT += dt;
+    if (cause === 'void') ship.y += ship.vy * dt * 0.3;
   }
-  pipes = pipes.filter(q => q.x > -PIPE_W - 20);
-  const last = pipes[pipes.length - 1];
-  if (!last || last.x < W - p.spacing) addPipe((last ? last.x : W) + p.spacing);
 
-  if (ship.y - SHIP_R < 0 || ship.y + SHIP_R > H) return die();
-  for (const q of pipes) if (hit(q)) return die();
+  if (state === 'over') { if (trail.length) trail.shift(); }
+  else { trail.push({ wx: dist + SHIP_X, y: ship.y }); if (trail.length > 26) trail.shift(); }
+  cols = cols.filter(c => c.wx - dist > -COL_W * 2);
+  planets = planets.filter(q => q.wx - dist > -260);
+  belt = belt.filter(d => d.wx - dist > -120);
 }
 
 // ---------- Zeichnen ----------
-function drawPlanet() {
-  const st = stage();
-  const x = W * 0.72, y = H * 0.3, r = 90;
-  ctx.save();
-  ctx.globalAlpha = 0.35;
-  if (st.ring) { ctx.strokeStyle = st.color; ctx.lineWidth = 10; ctx.beginPath(); ctx.ellipse(x, y, r * 1.8, r * 0.4, -0.3, Math.PI, Math.PI * 2); ctx.stroke(); }
-  const g = ctx.createRadialGradient(x - r * 0.4, y - r * 0.4, r * 0.1, x, y, r);
-  g.addColorStop(0, st.color); g.addColorStop(1, "#05060f");
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  if (st.ring) { ctx.strokeStyle = st.color; ctx.lineWidth = 10; ctx.beginPath(); ctx.ellipse(x, y, r * 1.8, r * 0.4, -0.3, 0, Math.PI); ctx.stroke(); }
-  ctx.restore();
-}
-function drawRocks(rocks, x, y0, dir) {
-  for (const k of rocks) {
-    const cx = x + PIPE_W / 2 + k.dx, cy = y0 + dir * k.y;
-    const g = ctx.createRadialGradient(cx - k.r * 0.4, cy - k.r * 0.4, 2, cx, cy, k.r);
-    const s = k.shade;
-    g.addColorStop(0, `rgb(${150 * s},${135 * s},${125 * s})`);
-    g.addColorStop(1, `rgb(${55 * s},${48 * s},${50 * s})`);
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, k.r + 4, 0, Math.PI * 2); ctx.fill();
+function ringHalf(p, front, base) {
+  const sat = p.b.look === 'ring', body = p.b.size;
+  const rx = body * (sat ? 2.25 : 1.75), ry = body * (sat ? 0.62 : 0.4);
+  const a0 = front ? 0 : Math.PI, a1 = front ? Math.PI : 2 * Math.PI;
+  ctx.save(); ctx.translate(p.wx, p.y); ctx.rotate(sat ? -0.32 : 1.35);
+  ctx.strokeStyle = K.cream;
+  ctx.globalAlpha = (sat ? 0.9 : 0.6) * base; ctx.lineWidth = sat ? 4 : 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, a0, a1); ctx.stroke();
+  if (sat) {
+    ctx.globalAlpha = 0.6 * base; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.ellipse(0, 0, rx * 0.8, ry * 0.8, 0, a0, a1); ctx.stroke();
   }
-}
-function drawShip() {
-  ctx.save();
-  ctx.translate(SHIP_X, ship.y); ctx.rotate(ship.rot);
-  if (state === "dead") ctx.globalAlpha = Math.max(0, 1 - deadT * 1.5);
-  ctx.fillStyle = "#e8edf5";
-  ctx.beginPath(); ctx.moveTo(18, 0); ctx.quadraticCurveTo(6, -11, -12, -9); ctx.lineTo(-12, 9); ctx.quadraticCurveTo(6, 11, 18, 0); ctx.fill();
-  ctx.fillStyle = "#ff5a4e";
-  ctx.beginPath(); ctx.moveTo(-6, -9); ctx.lineTo(-16, -16); ctx.lineTo(-12, -6); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(-6, 9); ctx.lineTo(-16, 16); ctx.lineTo(-12, 6); ctx.fill();
-  ctx.fillStyle = "#4fc3f7"; ctx.beginPath(); ctx.arc(5, 0, 4.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
-function text(s, x, y, size, color, align = "center") {
-  ctx.font = `700 ${size}px system-ui, -apple-system, Roboto, sans-serif`;
-  ctx.textAlign = align; ctx.textBaseline = "middle";
-  ctx.lineWidth = Math.max(3, size / 7); ctx.strokeStyle = "#05060f"; ctx.strokeText(s, x, y);
-  ctx.fillStyle = color; ctx.fillText(s, x, y);
+function features(p, base) {
+  const b = p.b.size, x = p.wx, y = p.y, look = p.b.look;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, b * 0.98, 0, 6.283); ctx.clip();
+  if (look === 'bands') {
+    ctx.globalAlpha = 0.55 * base; ctx.fillStyle = K.a;
+    for (const [off, h] of [[-0.6, 0.16], [-0.22, 0.2], [0.18, 0.14], [0.52, 0.12]]) ctx.fillRect(x - b, y + off * b, 2 * b, h * b);
+    ctx.globalAlpha = 0.9 * base; ctx.fillStyle = K.b;
+    ctx.beginPath(); ctx.ellipse(x + 0.32 * b, y + 0.32 * b, 0.24 * b, 0.13 * b, 0, 0, 6.283); ctx.fill();
+  } else if (look === 'rock') {
+    ctx.globalAlpha = 0.3 * base; ctx.fillStyle = K.paper;
+    for (const [cx, cy, cr] of [[-0.35, -0.2, 0.24], [0.32, 0.22, 0.17], [0.02, 0.5, 0.13]]) dot(x + cx * b, y + cy * b, cr * b);
+  } else if (look === 'spot') {
+    ctx.globalAlpha = 0.5 * base; ctx.fillStyle = K.paper;
+    ctx.beginPath(); ctx.ellipse(x - 0.25 * b, y - 0.12 * b, 0.27 * b, 0.15 * b, -0.2, 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+  if (look === 'veil') {
+    ctx.globalAlpha = 0.35 * base; ctx.strokeStyle = K.cream; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, b + 4.5, 0, 6.283); ctx.stroke();
+  } else if (look === 'moon') {
+    const a = t * 0.8 + p.phase;
+    ctx.globalAlpha = 0.9 * base; ctx.fillStyle = K.cream;
+    dot(x + Math.cos(a) * (b + 10), y + Math.sin(a) * (b + 10), 3.2);
+  }
+  ctx.globalAlpha = 1;
 }
+// Umlaufbahn als gestrichelter Bogen um die Sonne weit links
+function orbit(x, y, al) {
+  const R = 1400, span = H / R;
+  ctx.setLineDash([2, 7]); ctx.lineWidth = 1; ctx.strokeStyle = K.cream; ctx.globalAlpha = al;
+  ctx.beginPath(); ctx.arc(x - R, y, R, -span, span); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+}
+function drawPlanet(p) {
+  const sx = p.wx - dist, ext = p.b.size * 2.4 + 20;
+  if (sx < -ext || sx > W + ext) return;
+  const base = p.passed ? 0.55 : 1, body = p.b.size;
+  orbit(p.wx, p.y, p.passed ? 0.08 : 0.2);
+  const br = 1 + 0.35 * Math.sin(t * 0.9 + p.phase);
+  const ox = p.ox * br, oy = p.oy * br, crot = -t * p.cs;
+  const col = K[p.b.col], shCol = p.b.col === 'b' ? K.a : K.b;
+  if (p.b.look === 'ring' || p.b.look === 'tilt') ringHalf(p, false, base);
+  ctx.globalAlpha = 0.5 * base; ctx.fillStyle = shCol;
+  inkPath(p.wx - ox, p.y - oy, body, p.wc, crot); ctx.fill();
+  ctx.globalAlpha = 0.95 * base; ctx.fillStyle = col;
+  inkPath(p.wx, p.y, body, p.wc, crot); ctx.fill();
+  features(p, base);
+  ctx.globalAlpha = 0.3 * base; ctx.fillStyle = dotsP;
+  inkPath(p.wx, p.y, body, p.wc, crot); ctx.fill();
+  if (p.b.look === 'ring' || p.b.look === 'tilt') ringHalf(p, true, base);
+  ctx.globalAlpha = 1;
+  const ly = p.y + body * (p.b.look === 'ring' ? 1.1 : 1) + 22;
+  txt(p.b.name, p.wx, ly, 14, K.cream, null, 0.9 * base, 0);
+  txt(p.b.label, p.wx, ly + 15, 10.5, K.b, null, 0.8 * base, 0);
+}
+function drawSun() {
+  const sx = sun.wx - dist;
+  if (sx < -260) return;
+  ctx.fillStyle = K.a;
+  for (const [k, a] of [[2.1, 0.05], [1.65, 0.08], [1.3, 0.12]]) {
+    ctx.globalAlpha = a * (0.85 + 0.15 * Math.sin(t * 1.4 + k));
+    inkPath(sun.wx, sun.y, 70 * k, sun.wr, t * 0.05 * k); ctx.fill();
+  }
+  ctx.globalAlpha = 0.5; ctx.fillStyle = K.b;
+  inkPath(sun.wx - sun.ox, sun.y - sun.oy, 70, sun.wc, -t * sun.cs); ctx.fill();
+  ctx.globalAlpha = 0.95; ctx.fillStyle = K.a;
+  inkPath(sun.wx, sun.y, 70, sun.wc, -t * sun.cs); ctx.fill();
+  ctx.globalAlpha = 0.3; ctx.fillStyle = dotsP;
+  inkPath(sun.wx, sun.y, 70, sun.wc, -t * sun.cs); ctx.fill();
+  ctx.globalAlpha = 1;
+  txt('Sonne', sun.wx + 40, sun.y + 96, 14, K.cream, null, 0.85, 0);
+}
+function drawCol(c) {
+  const sx = c.wx - dist;
+  if (sx < -COL_W * 2 || sx > W + COL_W * 2) return;
+  for (const r of c.rocks) {
+    const x = c.wx + r.dx, rot = r.rot + t * r.spin;
+    ctx.globalAlpha = 0.45; ctx.fillStyle = K.b;
+    inkPath(x - 2.5, r.y + 2.5, r.r, r.w, rot); ctx.fill();
+    ctx.globalAlpha = 1; ctx.fillStyle = K.deep;
+    inkPath(x, r.y, r.r, r.w, rot); ctx.fill();
+    ctx.globalAlpha = 0.35; ctx.strokeStyle = K.cream; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.globalAlpha = 0.3; ctx.fillStyle = dotsP; ctx.fill();
+  }
+  // Lueckenkanten in Akzentfarbe, damit man sie sofort sieht
+  ctx.globalAlpha = 0.8; ctx.fillStyle = K.a;
+  dot(c.wx - 9, c.gy - c.gap / 2 - 7, 2.2); dot(c.wx + 8, c.gy - c.gap / 2 - 10, 1.6);
+  dot(c.wx - 7, c.gy + c.gap / 2 + 9, 1.6); dot(c.wx + 9, c.gy + c.gap / 2 + 7, 2.2);
+  ctx.globalAlpha = 1;
+}
+function lapFade() {
+  if (lapT <= 0 || lapT >= 2.8 || !(state === 'lap' || state === 'play')) return 0;
+  if (lapT < 1.7) return 0;
+  if (lapT < 2.3) return (lapT - 1.7) / 0.6;
+  return 1 - (lapT - 2.3) / 0.5;
+}
+// Strecke Sonne → Neptun mit gestauchten echten Abstaenden
+function drawMap() {
+  const x0 = 34, x1 = W - 34, y = 22;
+  ctx.setLineDash([2, 5]); ctx.lineWidth = 1; ctx.strokeStyle = K.cream; ctx.globalAlpha = 0.35;
+  ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); ctx.setLineDash([]);
+  ctx.globalAlpha = 0.9; ctx.fillStyle = K.a; dot(x0, y, 4);
+  let cum = 0;
+  BODIES.forEach((b, i) => {
+    cum += b.cols;
+    const x = x0 + (x1 - x0) * cum / TOTAL;
+    ctx.globalAlpha = i < sec ? 0.95 : 0.45; ctx.fillStyle = i < sec ? K.b : K.cream;
+    dot(x, y, 1.6 + b.size / 22);
+  });
+  const cx = x0 + (x1 - x0) * Math.min(1, lapPassed / TOTAL);
+  ctx.globalAlpha = 0.5; ctx.fillStyle = K.b; dot(cx - 1.5, y + 1.5, 3.4);
+  ctx.globalAlpha = 1; ctx.fillStyle = K.a; dot(cx, y, 3.2);
+  const nxt = BODIES[Math.min(sec, BODIES.length - 1)];
+  ctx.textAlign = 'left';
+  txt('Sonne', x0 - 10, y + 16, 9.5, K.cream, null, 0.55, 0);
+  ctx.textAlign = 'right';
+  txt('Ziel: ' + nxt.name, x1 + 10, y + 16, 9.5, K.cream, null, 0.7, 0);
+  ctx.textAlign = 'center';
+}
+
 function draw() {
-  ctx.fillStyle = "#05060f"; ctx.fillRect(0, 0, W, H);
-  for (const s of stars) { ctx.globalAlpha = 0.3 + s.z * 0.7; ctx.fillStyle = "#fff"; ctx.fillRect(s.x, s.y, s.z * 2, s.z * 2); }
-  ctx.globalAlpha = 1;
-  drawPlanet();
-  for (const q of pipes) {
-    drawRocks(q.top, q.x, q.gy - q.gap / 2 - 14, -1);
-    drawRocks(q.bot, q.x, q.gy + q.gap / 2 + 14, 1);
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = K.paper; ctx.fillRect(0, 0, W, H);
+  const M = W * 3;
+
+  ctx.fillStyle = K.deep; ctx.globalAlpha = 0.22;
+  for (const c of clouds) {
+    let x = ((c.x - dist * 0.08) % M + M) % M;
+    if (x > W + c.r) x -= M;
+    if (x + c.r > 0) { inkPath(x, c.y + Math.sin(t * 0.3 + c.r) * 6, c.r, c.w, t * c.sp); ctx.fill(); }
   }
-  for (const q of particles) { ctx.globalAlpha = Math.max(0, q.life * 2); ctx.fillStyle = q.c; ctx.fillRect(q.x - 2, q.y - 2, 4, 4); }
+  for (const s of specks) {
+    const x = ((s.x - dist * s.p) % M + M) % M;
+    if (x > W + 2) continue;
+    ctx.globalAlpha = s.a * (0.65 + 0.35 * Math.sin(t * 1.6 + s.ph));
+    ctx.fillStyle = s.pk ? K.a : K.cream;
+    dot(x, s.y, s.s);
+  }
   ctx.globalAlpha = 1;
-  drawShip();
 
-  if (state !== "ready") text(String(score), W / 2, 64, 52, "#fff");
-  text(`Level ${level} · ${stage().name}`, 14, 22, 15, "#9fb3d9", "left");
-  text(`Best ${best}`, W - 14, 22, 15, "#9fb3d9", "right");
+  // Spielwelt
+  ctx.save();
+  if (shake > 0) ctx.translate((Math.random() - 0.5) * 18 * shake, (Math.random() - 0.5) * 18 * shake);
+  ctx.translate(-dist, 0);
+  for (const d of belt) {
+    if (d.wx - dist < -10 || d.wx - dist > W + 140) continue;
+    if (d.label) { txt(d.label, d.wx, d.y, 11, K.cream, null, 0.45, 0); continue; }
+    ctx.globalAlpha = d.al * (0.7 + 0.3 * Math.sin(t * 1.3 + d.wx));
+    ctx.fillStyle = K.cream; dot(d.wx, d.y, d.s);
+  }
+  ctx.globalAlpha = 1;
+  drawSun();
+  for (const p of planets) drawPlanet(p);
+  for (const c of cols) drawCol(c);
 
-  if (levelBanner > 0 && state === "play" && level > 1) {
-    ctx.globalAlpha = Math.min(1, levelBanner);
-    text(`Level ${level}`, W / 2, H * 0.36, 40, "#ffe08a");
-    text(stage().name, W / 2, H * 0.36 + 40, 22, "#fff");
+  ctx.lineCap = 'round';
+  for (let i = 1; i < trail.length; i++) {
+    const a = i / trail.length, p0 = trail[i - 1], p1 = trail[i];
+    ctx.globalAlpha = a * 0.3; ctx.strokeStyle = K.b; ctx.lineWidth = 1 + a * 3;
+    ctx.beginPath(); ctx.moveTo(p0.wx - 2, p0.y + 2); ctx.lineTo(p1.wx - 2, p1.y + 2); ctx.stroke();
+    ctx.globalAlpha = a * 0.62; ctx.strokeStyle = K.a; ctx.lineWidth = 0.8 + a * 3;
+    ctx.beginPath(); ctx.moveTo(p0.wx, p0.y); ctx.lineTo(p1.wx, p1.y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const ca = state === 'over' ? (cause === 'rock' ? 0 : Math.max(0, 1 - deadT * 1.4)) : 1;
+  if (ca > 0) {
+    const cx = dist + SHIP_X, cy = ship.y, pl = 1 + 0.08 * Math.sin(t * 7);
+    ctx.globalAlpha = 0.5 * ca; ctx.fillStyle = K.b; dot(cx - 2.5, cy + 2.5, 8 * pl);
+    ctx.globalAlpha = ca; ctx.fillStyle = K.a; dot(cx, cy, 7.5 * pl);
+    ctx.globalAlpha = 0.8 * ca; ctx.fillStyle = K.cream; dot(cx - 2, cy - 2.3, 2.4);
     ctx.globalAlpha = 1;
   }
-  if (state === "ready") {
-    text("SPACE HOPPING", W / 2, H * 0.22, 38, "#ffe08a");
-    text("Tippen zum Schub geben", W / 2, H * 0.62, 20, "#fff");
-    text("Fliege durch die Lücken im Asteroidengürtel", W / 2, H * 0.62 + 30, 14, "#9fb3d9");
-    if (best) text(`Bestwert: ${best}`, W / 2, H * 0.62 + 60, 16, "#9fb3d9");
+  ctx.restore();
+
+  for (const b of bits) { ctx.globalAlpha = Math.max(0, b.life) * 0.85; ctx.fillStyle = b.c; dot(b.x, b.y, b.r); }
+  ctx.globalAlpha = 1;
+  for (const pp of pops) {
+    const a = Math.min(1, pp.life * 1.6);
+    txt(pp.a, pp.x, pp.y, 30, K.a, K.b, a, 0);
+    txt(pp.b, pp.x, pp.y + 20, 13, K.cream, null, a * 0.9, 0);
   }
-  if (state === "pause") { text("Pause", W / 2, H * 0.42, 40, "#fff"); text("Tippen zum Weiterfliegen", W / 2, H * 0.42 + 40, 18, "#9fb3d9"); }
-  if (state === "dead" && deadT > 0.3) {
-    ctx.fillStyle = "rgba(5,6,15,0.55)"; ctx.fillRect(40, H * 0.3, W - 80, 220);
-    text("Crash!", W / 2, H * 0.3 + 40, 36, "#ff6a3d");
-    text(`Punkte ${score}`, W / 2, H * 0.3 + 90, 22, "#fff");
-    text(`Bestwert ${best}`, W / 2, H * 0.3 + 122, 18, "#9fb3d9");
-    text(`erreicht: ${stage().name}`, W / 2, H * 0.3 + 152, 16, "#9fb3d9");
-    if (deadT > 0.6) text("Tippen für neuen Flug", W / 2, H * 0.3 + 192, 16, "#ffe08a");
+
+  if (flash > 0) {
+    const pr = 1 - flash / 1.6, x = pr * (W + 260) - 130;
+    ctx.save(); ctx.translate(x, 0); ctx.rotate(-0.11);
+    ctx.globalAlpha = Math.sin(clamp(pr, 0, 1) * Math.PI) * 0.3;
+    ctx.fillStyle = K.a; ctx.fillRect(-70, -110, 46, H + 220);
+    ctx.globalAlpha *= 0.7; ctx.fillStyle = K.b; ctx.fillRect(-16, -110, 14, H + 220);
+    ctx.restore(); ctx.globalAlpha = 1;
   }
-  if (flashT > 0) { ctx.fillStyle = `rgba(255,255,255,${flashT * 2})`; ctx.fillRect(0, 0, W, H); }
+  const fade = lapFade();
+  if (fade > 0) { ctx.globalAlpha = fade; ctx.fillStyle = K.paper; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+
+  ctx.save(); ctx.translate(-gx, -gy);
+  ctx.globalAlpha = 0.5; ctx.fillStyle = grain; ctx.fillRect(0, 0, W + 12, H + 12);
+  ctx.restore(); ctx.globalAlpha = 1;
+  ctx.fillStyle = vign; ctx.fillRect(0, 0, W, H);
+
+  // Anzeige
+  const title = state === 'ready' && showTitle;
+  if (title) { ctx.globalAlpha = 0.5; ctx.fillStyle = K.paper; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  else {
+    drawMap();
+    txt(String(score), W / 2, 84, 40, K.cream, K.a, 1, Math.sin(t * 2.2) * 1.6);
+    txt('Runde ' + runde + ' · Level ' + params().level, W / 2, 106, 12, K.b, null, 0.85, 0);
+  }
+  if (intro > 0 && state !== 'over') txt('Druckfarbe: ' + K.name, W / 2, 126, 12, K.a, null, Math.min(1, intro), 0);
+  if (flash > 0 && banner && state !== 'over') {
+    const f = Math.min(1, flash);
+    txt(banner.a, W / 2, 150, 20 + (1 - f) * 5, K.a, null, f, 0);
+    txt(banner.b, W / 2, 170, 12, K.cream, null, f * 0.9, 0);
+  }
+  if (state === 'lap' && lapT < 2.3) {
+    const a = Math.min(1, lapT * 3) * (lapT > 1.9 ? Math.max(0, (2.3 - lapT) / 0.4) : 1);
+    txt('Sonnensystem durchquert', W / 2, H * 0.3, 22, K.cream, K.a, a, 0);
+    txt('weiter in Runde ' + (runde + 1), W / 2, H * 0.3 + 26, 14, K.b, null, a, 0);
+  }
+  if (state === 'ready') {
+    if (title) {
+      const y0 = H * 0.17, bob = Math.sin(t * 1.3) * 3;
+      txt('Trabant', W / 2, y0 + bob, 46, K.cream, K.b, 1, Math.sin(t * 0.8) * 2.4);
+      txt('Druckfarbe: ' + K.name, W / 2, y0 + 24 + bob, 12, K.a, null, 0.85, 0);
+      txt('Von der Sonne bis zum Neptun', W / 2, y0 + 56, 15, K.cream, null, 0.95, 0);
+      txt('Tippen gibt dem Kometen Schub', W / 2, H * 0.66, 14, K.cream, null, 0.85, 0);
+      txt('Flieg durch die Lücken im Gestein', W / 2, H * 0.66 + 20, 14, K.cream, null, 0.85, 0);
+      txt('Jeder Planet ist ein Level', W / 2, H * 0.66 + 40, 14, K.cream, null, 0.85, 0);
+      txt('Tippen zum Starten', W / 2, H * 0.66 + 76, 15, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
+      if (best > 0) txt('Bestwert ' + best, W / 2, H * 0.66 + 100, 13, K.b, null, 0.85, 0);
+    } else {
+      txt('Tippen zum Starten', W / 2, H * 0.66, 16, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
+    }
+  }
+  if (state === 'paused') {
+    panel(62, H / 2 - 44, 236, 88);
+    txt('Pause', W / 2, H / 2 - 8, 20, K.cream, null, 1, 0);
+    txt('Tippen zum Weiterfliegen', W / 2, H / 2 + 20, 14, K.a, null, 1, 0);
+  }
+  if (state === 'over' && deadT > 0.3) {
+    const y = H / 2 - 80;
+    panel(46, y, 268, 160);
+    txt(cause === 'rock' ? 'Am Gestein zerschellt' : 'Aus der Bahn geraten', W / 2, y + 38, 22, K.cream, null, 1, 0);
+    const wo = sec === 0 ? 'Noch an der Sonne' : 'Erreicht: ' + BODIES[sec - 1].name;
+    txt(runde > 1 ? wo + ' in Runde ' + runde : wo, W / 2, y + 66, 14, K.cream, null, 0.85, 0);
+    txt('Punkte ' + score + '   Bestwert ' + best, W / 2, y + 90, 14, K.b, null, 0.9, 0);
+    if (deadT > 0.6) txt('Tippen für neue Farben', W / 2, y + 130, 15, K.a, null, 0.7 + Math.sin(t * 4) * 0.3, 0);
+  }
 }
 
-// ---------- Schleife ----------
-let lastT = performance.now();
+// ---------- Start ----------
+let last = performance.now();
 function loop(now) {
-  const dt = Math.min(0.033, (now - lastT) / 1000); lastT = now;
-  update(dt); draw();
+  const dt = Math.min(0.033, Math.max(0, (now - last) / 1000));
+  last = now;
+  update(dt);
+  draw();
   requestAnimationFrame(loop);
 }
+fit();
+grain = makeGrain();
+reset();
+
+document.addEventListener('pointerdown', e => { e.preventDefault(); press(); });
+['touchstart', 'touchmove', 'touchend'].forEach(n => document.addEventListener(n, e => e.preventDefault(), { passive: false }));
+document.addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowUp') { e.preventDefault(); if (!e.repeat) press(); }
+  if (e.code === 'KeyP') pause();
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+addEventListener('resize', fit);
+addEventListener('orientationchange', () => setTimeout(fit, 120));
 requestAnimationFrame(loop);
 </script>
 </body>
