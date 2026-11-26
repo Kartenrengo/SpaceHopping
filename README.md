@@ -1,6 +1,6 @@
 # Trabant
 
-Planeten-Hopping mit der Schwung-Mechanik von **Tiny Wings**, im Druck-Look von Trabant: Ein Komet holt in der Umlaufbahn Anlauf und springt von der Sonne bis zum Rand des beobachtbaren Universums.
+Planeten-Hopping mit der Schwung-Mechanik von **Tiny Wings**, im Druck-Look von Trabant: Ein Komet holt in der Umlaufbahn Anlauf und springt von der Sonne bis zum Rand des beobachtbaren Universums – und danach endlos weiter ins Unbekannte.
 
 ## Steuerung
 - **Halten auf dem Weg nach innen:** Die Schwerkraft des Planeten wird stärker, der Komet stürzt in den Schwerkrafttrichter und wird schneller (wie bergab bei Tiny Wings).
@@ -9,9 +9,11 @@ Planeten-Hopping mit der Schwung-Mechanik von **Tiny Wings**, im Druck-Look von 
 - **Mehr Anlauf = weiter fliegen:** Die Reichweite wächst mit dem Schwung. Bei viel Schwung fliegt der Komet zu schnell durch das nächste Schwerefeld und landet erst dahinter, das gibt 10 × k² Punkte (k = Anzahl Ziele).
 - **Flach einfliegen** = Perfekt, der Schwung bleibt. Drei perfekte Einflüge in Folge = **Fieber** (8 s doppelte Punkte, das Licht steht still).
 - **Zu tief gestürzt:** Der Komet streift den Planeten und verliert Tempo. **Ins Leere geflogen:** Er wird zum letzten Ziel zurückgeholt, das kostet 3 s Licht.
-- Das **Licht** läuft ab, jedes neue Ziel bringt Licht dazu. Ist es aus, zählt nur noch der laufende Flug.
+- Das **Licht** läuft ab, jedes neue Ziel bringt Licht dazu. Ist es aus, zählt nur noch der laufende Flug. Das ist das einzige Ende.
 
-## Die Reise (echte Entfernungen)
+## Die Reise
+
+### Teil 1: echte Ziele, echte Entfernungen
 | Ziel | Entfernung |
 |---|---|
 | Merkur … Neptun | 58 Mio. km … 4,52 Mrd. km |
@@ -27,6 +29,22 @@ Planeten-Hopping mit der Schwung-Mechanik von **Tiny Wings**, im Druck-Look von 
 | Kosmische Hintergrundstrahlung | 13,8 Mrd. Lichtjahre |
 
 Maßstab logarithmisch: Der Abstand zum nächsten Ziel wächst mit jeder Verzehnfachung der echten Entfernung um 70 Einheiten (mindestens so viel, dass sich die Schwerefelder nicht berühren). Spätere Ziele drehen schneller und fangen weniger großzügig ein.
+
+### Teil 2: endlos ins Unbekannte
+Nach der Hintergrundstrahlung geht es ohne Ende weiter, in Gebieten zu je 7 Zielen. Jedes Gebiet hat eigene Druckfarben, eigene Himmelskörper und eine eigene Eigenheit:
+
+| Gebiet | Eigenheit |
+|---|---|
+| Sternhaufen | dicht gedrängt, kurze Abstände, schnellere Umläufe |
+| Nebelmeer | große, weiche Schwerefelder, fängt leichter ein |
+| Schwarze Löcher | starke Schwerkraft, schnelle Umläufe, fängt schwerer ein |
+| Fremde Welten | Planeten aller Art um fremde Sterne |
+| Galaxienhaufen | riesige Abstände |
+| Planetensysteme | viele kleine Welten |
+
+Die Reihenfolge der Gebiete beginnt bei jedem Flug an einer zufälligen Stelle. Diese Ziele sind erfunden (z. B. „Nebel 3 · Sektor 4“) und haben keine echten Entfernungen.
+
+**Es wird langsam schwerer:** Mit jedem Ziel drehen die Umläufe schneller (bis Ziel 30 deutlich, danach langsam weiter), das Einfangen wird knapper, die Abstände wachsen und liegen seitlicher, die Zielhilfe lässt nach und jedes Ziel bringt weniger Licht (4,5 s → 2,5 s).
 
 ## Technik
 Eine Datei (`index.html`), läuft offline im Handy-Browser. Vollbild beim ersten Tipp, kein Zoom/Pull-to-Refresh, Pause beim App-Wechsel, Vibration, Bestwert bleibt auf dem Gerät.
